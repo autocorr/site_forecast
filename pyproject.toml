@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "site_forecast"
+authors = [
+    { name = "Brian Svoboda" }
+]
+description = "Weather forecast system for the Very Large Array."
+readme = "README.rst"
+license = { file = "LICENSE.txt" }
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "amwrap@git+https://github.com/autocorr/amwrap.git@main",
+    "astropy>=5.0.0",
+    "fastparquet>=2024.11.0",
+    "herbie-data[extras]>=2025.7.0",
+    "lightgbm>=4.6.0",
+    "matplotlib>=3.0.0",
+    "metpy>=1.7.0",
+    "numpy>=1.24.0",
+    "openmeteo-requests>=1.5.0",
+    "pandas>=2.1.0",
+    "psycopg2>=2.9.0",
+    "requests-cache>=1.2.1",
+    "retry-requests>=2.0.0",
+    "u8darts[notorch]>=0.35.0",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.optional-dependencies]
+test  = [ "pytest>=8.0.0" ]
+dev   = [ "flake8>=7.0.0" ]
+doc   = [ "sphinx>=7.0.0", "sphinx-rtd-theme>=3.0.0" ]
+train = [ "optuna>=4.3.0" ]
+
+[project.urls]
+source = "https://github.com/autocorr/site_forecast"
+documentation = "https://vla_forecast.readthedocs.io"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["site_forecast*"]
+
