@@ -40,6 +40,8 @@ COLUMNS_HR = [
         "cloud_cover_low",
         "cloud_cover_mid",
         "cloud_cover_high",
+        #"sensible_heat_flux",
+        #"latent_heat_flux",
         # Precipitation, storm quantities
         "weather_code",
         "rain",

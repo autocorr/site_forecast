@@ -7,7 +7,7 @@ import pandas as pd
 from scipy import interpolate
 
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
 
 
 def get_gaps(df, delta="0.25D", col="mjd"):

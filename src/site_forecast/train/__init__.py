@@ -35,6 +35,8 @@ TRAINING_COLUMNS = [
         "cloud_cover_low",
         "cloud_cover_mid",
         "cloud_cover_high",
+        #"sensible_heat_flux",
+        #"latent_heat_flux",
         "hour",
         "day_of_year",
         "phase_rms",
@@ -92,7 +94,7 @@ class TrainingData:
         series = (
                 TimeSeries
                 .from_dataframe(self.df, fill_missing_dates=True)
-                .drop(columns=drop_cols)
+                .drop_columns(drop_cols)
                 .astype(np.float32)
         )
         # Target series
@@ -101,7 +103,7 @@ class TrainingData:
         # Future covariates
         X = series.drop_columns(target_cols)
         self.X = DataSet(X, split_frac)
-        self.future_cols = X._xa.component.to_numpy().tolist()
+        self.future_cols = X.components.tolist()
 
 
 def fit_model(

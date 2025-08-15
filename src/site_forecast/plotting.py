@@ -653,7 +653,7 @@ def plot_operator_summary(fc, outname="summary") -> None:
     draw_phase_rms(ax1, fc)
     draw_wind(ax2, fc)
     colors = {"mcc"}
-    items = [("mcc", "0.3"), ("tcolw", "dodgerblue"), ("veril", "red")]
+    items = [("mcc", "0.3"), ("tcolw", "dodgerblue"), ("veril", "firebrick")]
     for label, color in items:
         hq = fc.herbie_queries[label]
         if not hq.okay:
