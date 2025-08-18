@@ -275,7 +275,7 @@ def extract_circular_region(
     df = (
             p_ds.to_dataframe()
             .droplevel("point")
-            .swaplevel("step", "k")
+            .swaplevel()  # step|time & k
             .sort_index()
     )
     # Convert the step index to date in order to match results from

@@ -211,7 +211,7 @@ def clip_xlim(ax, t, delta="12h"):
 
 
 def set_dates(ax, minticks=3, maxticks=7):
-    locator = mdates.AutoDateLocator(minticks=3, maxticks=7)
+    locator = mdates.AutoDateLocator(minticks=minticks, maxticks=maxticks)
     formatter = mdates.ConciseDateFormatter(locator)
     formatter.formats = [
             "%y",
@@ -391,6 +391,41 @@ def plot_pwv(fc, outname="pwv"):
     ax.plot(w_dates, pwv, color="darkred")
     ax.set_ylim(0, 40)
     ax.set_ylabel("PWV [mm]")
+    style_single_panel_plot(ax, fc)
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_precipitation(fc, outname="precip"):
+    if not fc.weather.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    w_df = fc.weather.df
+    w_dates = w_df.index.to_pydatetime()
+    fig, axes = plt.subplots(figsize=(4, 4.5), nrows=2, sharex=True)
+    ax1, ax2 = axes
+    ax1.plot(w_dates, w_df.precipitation_probability, color="darkred")
+    ax1.set_ylim(-2.5, 102.5)
+    ax1.set_ylabel("Precip. Probability")
+    ax2.fill_between(w_dates, w_df.precipitation, step="mid", color="royalblue")
+    ax2.set_ylim(-1, 31)
+    ax2.set_ylabel("Precip. [mm]")
+    for ax in axes:
+        style_single_panel_plot(ax, fc)
+        ax.label_outer()
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_boundary_layer_height(fc, outname="pbl_height"):
+    if not fc.weather.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    w_df = fc.weather.df
+    w_dates = w_df.index.to_pydatetime()
+    fig, ax = plt.subplots(figsize=(4, 3))
+    pbl = w_df.boundary_layer_height / 1e3  # km
+    ax.plot(w_dates, pbl, color="darkred")
+    ax.set_ylim(-0.1, 4.1)
+    ax.set_ylabel("Boundary Layer Height [km]")
     style_single_panel_plot(ax, fc)
     savefig(outname, t_forecast=fc.forecast_time)
 
@@ -682,6 +717,8 @@ def plot_all_weather(fc):
     plot_temperature(fc)
     plot_direct_radiation(fc)
     plot_pwv(fc)
+    plot_precipitation(fc)
+    plot_boundary_layer_height(fc)
     plot_cloud_cover_point(fc)
     plot_operator_summary(fc)
     for hq in fc.herbie_queries.values():
