@@ -28,6 +28,8 @@ CMAP.set_bad("0.85")
 
 warnings.filterwarnings(action="ignore", category=UserWarning,
         message="This figure includes Axes that are not compatible with tight_layout.*")
+warnings.filterwarnings(action="ignore", category=UserWarning,
+        message="No artists with labels found to put in legend.*")
 
 
 def apply_mpl_settings():
@@ -687,18 +689,16 @@ def plot_operator_summary(fc, outname="summary") -> None:
     ax1, ax2, ax3 = axes
     draw_phase_rms(ax1, fc)
     draw_wind(ax2, fc)
-    colors = {"mcc"}
-    items = [("mcc", "0.3"), ("tcolw", "dodgerblue"), ("veril", "firebrick")]
-    for label, color in items:
-        hq = fc.herbie_queries[label]
+    colors = {"mcc": "0.3", "tcolw": "dodgerblue", "veril": "firebrick"}
+    for label, hq in fc.herbie_queries.items():
         if not hq.okay:
             logger.warn(f"Skipping plot '{outname}' panel '{label}'")
             continue
         ds = hq.ds
         s_ds = ds.sel(radius=10.0)
-        ax3.plot(s_ds.date, s_ds[f"{hq.query_type}_c"], color=color,
+        ax3.plot(s_ds.date, s_ds[f"{hq.query_type}_c"], color=colors[label],
                 drawstyle="steps-mid", label=label.upper())
-    style_single_panel_plot(ax3, hq)
+    style_single_panel_plot(ax3, fc)
     ax3.set_ylim(-0.05, 1.05)
     ax3.set_ylabel(f"Cloud Coverage")
     ax3.legend(loc="lower right", fontsize=8, handlelength=1, framealpha=0.6)
@@ -708,7 +708,7 @@ def plot_operator_summary(fc, outname="summary") -> None:
     )
     for ax in axes:
         ax.label_outer()
-    savefig(outname, t_forecast=hq.forecast_time)
+    savefig(outname, t_forecast=fc.forecast_time)
 
 
 def plot_all_weather(fc):

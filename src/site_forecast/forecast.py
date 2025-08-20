@@ -87,6 +87,9 @@ class Forecast:
             query.save_data()
 
     def write_results(self, out_cols=None) -> None:
+        if not self.weather.okay and not self.predict.okay:
+            logger.warn("Skipping TSV out file.")
+            return
         out_cols = OUT_COLS if out_cols is None else out_cols
         w_df = self.weather.df
         f_df = self.predict.df
@@ -99,17 +102,18 @@ class Forecast:
         # So this file will have a variable number of columns depending on the success.
         # This should be reformatted so these other columns have NaNs when no valid
         # data is present.
+        for col in out_cols:
+            if col not in df.columns:
+                df[col] = np.nan
         try:
-            df = df[out_cols]
             df["wind_speed_10m"] *= KMHOUR_TO_MS
             df["wind_gusts_10m"] *= KMHOUR_TO_MS
         except KeyError:
-            df = df[["phase_rms"]]
+            pass
         with out_path.open("w") as f:
             f.write(f"# Generated at {self.forecast_time.isoformat()}\n")
             f.write(f"# Phase model: {self.predict.model.name}\n")
             df.to_csv(f, sep="\t")
-        # FIXME Overwrite "current" forecast file, or unlink/link symbolic link
 
     def get_previous_phase_forecasts(self, n_forecasts=12):
         steps = np.arange(-n_forecasts, 0)

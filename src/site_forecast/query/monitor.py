@@ -183,6 +183,8 @@ class MonitorConnection:
 
 class MonitorPointDbQuery(QueryBase):
     lookback = 0.8  # ~19.2 hour
+    min_lag = pd.Timedelta("1h")
+    min_span = pd.Timedelta("12h")
 
     def __init__(self, mjd_start=None, mjd_end=None):
         if mjd_end is None:
@@ -203,6 +205,22 @@ class MonitorPointDbQuery(QueryBase):
     def okay(self) -> bool:
         return self.df is not None and not self.df.attrs["has_bad"]
 
+    @property
+    def is_recent(self) -> bool:
+        try:
+            t_last = self.df.index.tz_localize("utc").max()
+            return abs(self.forecast_time - t_last) < self.min_lag
+        except:
+            return False
+
+    @property
+    def is_complete(self) -> bool:
+        try:
+            t_span = abs(self.df.index.min() - self.df.index.max())
+            return t_span > self.min_span
+        except:
+            return False
+
 
 class ApiQuery(MonitorPointDbQuery):
     def __init__(self, mjd_start=None, mjd_end=None, **kwargs):
@@ -218,8 +236,12 @@ class ApiQuery(MonitorPointDbQuery):
             logger.exception("Error retrieving API data.")
             self.df = None
 
+    @property
+    def okay_for_model(self) -> bool:
+        return self.okay and self.is_recent and self.is_complete
+
     def to_model_series(self) -> Optional[TimeSeries]:
-        if self.okay:
+        if self.okay_for_model:
             return (
                     timeseries_from_dataframe(self.df[["phase_rms"]])
                     .resample("15min", method="interpolate")

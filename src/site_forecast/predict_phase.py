@@ -60,7 +60,7 @@ class ModelPhaseForecast(QueryBase):
             p_ts._components = pd.Index(["phase_rms"])
             p_ts._time_index.name = "time"
             p_ts._time_dim = "time"
-        which_okay = (w_query.okay, p_query.okay)
+        which_okay = (w_query.okay, p_query.okay_for_model)
         model = get_model(self.model_types[which_okay])
         try:
             self.df = predict_model(model, p_ts, w_ts)
