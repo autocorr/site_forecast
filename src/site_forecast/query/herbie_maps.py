@@ -1,6 +1,7 @@
 
 import io
 import warnings
+import multiprocessing
 from numbers import Real
 from pathlib import Path
 from contextlib import redirect_stdout
@@ -51,6 +52,7 @@ def get_quantity(
             time=None,
             fxx=None,
             save_dir=None,
+            timeout=300,  # sec
     ) -> Dataset:
     if fxx is None:
         fxx = list(range(13))  # 0..12 hours
@@ -65,6 +67,7 @@ def get_quantity(
                 model=model,
                 product=product,
                 fxx=last_fxx,
+                overwrite=True,
                 verbose=False,
                 save_dir="/dev/shm",
         )
@@ -90,7 +93,8 @@ def get_quantity(
     df = h.inventory(search)
     if df.shape[0] == 0:
         raise RuntimeError(f"Empty inventory: ({quantity=}, {layer=}, {fxx=})")
-    ds = h.xarray(search)
+    with multiprocessing.Pool(processes=1) as pool:
+        ds = pool.apply_async(h.xarray, (search,)).get(timeout=timeout)
     return ds
 
 
