@@ -426,7 +426,7 @@ def plot_boundary_layer_height(fc, outname="pbl_height"):
     fig, ax = plt.subplots(figsize=(4, 3))
     pbl = w_df.boundary_layer_height / 1e3  # km
     ax.plot(w_dates, pbl, color="darkred")
-    ax.set_ylim(-0.1, 4.1)
+    ax.set_ylim(-0.1, 5.1)
     ax.set_ylabel("Boundary Layer Height [km]")
     style_single_panel_plot(ax, fc)
     savefig(outname, t_forecast=fc.forecast_time)

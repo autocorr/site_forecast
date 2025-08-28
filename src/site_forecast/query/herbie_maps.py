@@ -56,6 +56,8 @@ def get_quantity(
     ) -> Dataset:
     if fxx is None:
         fxx = list(range(13))  # 0..12 hours
+    elif isinstance(fxx, Real):
+        fxx = [fxx]
     if time is None:
         try:
             last_fxx = max(fxx)
@@ -95,6 +97,9 @@ def get_quantity(
         raise RuntimeError(f"Empty inventory: ({quantity=}, {layer=}, {fxx=})")
     with multiprocessing.Pool(processes=1) as pool:
         ds = pool.apply_async(h.xarray, (search,)).get(timeout=timeout)
+    # Add "date" alias for the valid time coordinate (forecast time + step)
+    # in order to follow the convention of other queries.
+    ds = ds.assign_coords(date=ds.valid_time)
     return ds
 
 
@@ -211,7 +216,7 @@ def subset_rectangular_region(
     lat, lon = geodetic_to_number(lat, lon)
     if lat_size <= 0 or lon_size <= 0:
         raise ValueError(f"Invalid sizes: {lat_size=}, {lon_size=}")
-    # FIXME This selection method will break around the wrap-around point 0/360,
+    # FIXME This selection method will break at the wrap-around point 0/360,
     # but the HRRR is limited to the range 225-300 deg so will be okay for now.
     mask = (
             (lat-lat_size/2 <= ds.latitude)  & (ds.latitude  <= lat+lat_size/2) &
@@ -220,7 +225,8 @@ def subset_rectangular_region(
     return ds.where(mask, drop=True)
 
 
-def pick_points(ds, points, method="nearest", k=None):
+def pick_points(ds, points, method="nearest", k=None) -> Dataset:
+    # Redirect STDOUT to avoid the "Growing BallTree" message.
     with redirect_stdout(io.StringIO()) as f:
         return ds.herbie.pick_points(
                 points,
@@ -235,7 +241,7 @@ def extract_position(
             ds,
             lat: Latitude=SITE_LAT,
             lon: Longitude=SITE_LON,
-    ) -> DataFrame:
+    ) -> Dataset:
     lat, lon = geodetic_to_number(lat, lon)
     if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
         points = pd.DataFrame({"latitude": [lat], "longitude": [lon]})
@@ -246,13 +252,13 @@ def extract_position(
     p_ds = pick_points(ds, points, method="weighted")
     # Select all time steps for point 0 and neighbor/k 0. Data points have
     # already been weighted and averaged and all k values are identical.
-    df = p_ds.to_dataframe().loc[:,0,0].reset_index()
-    df["date"] = df.step + df.time
-    df.set_index("date", inplace=True)
-    data_cols = list(ds.data_vars.keys())
-    df = df[[*data_cols]].rename(columns={c: f"{c}_p" for c in data_cols})
-    df.attrs["radius"] = 0.0
-    return df
+    names = list(p_ds.data_vars.keys())
+    return (
+            p_ds
+            .sel(k=0, point=0)
+            .rename({s: f"{s}_p" for s in names})
+            .swap_dims({"step": "date"})
+    )
 
 
 def extract_circular_region(
@@ -270,27 +276,12 @@ def extract_circular_region(
     # FIXME Hard-coded to HRRR's 3 km spatial resolution.
     k = int(np.pi * (radius / 3)**2)
     k = 1 if k == 0 else k
-    # Redirect IO from Herbie's print statement "Growing BallTree".
-    # Should probably file a PR so that function respects the `verbose`
-    # argument too.
-    p_ds = pick_points(ds, points, method="nearest", k=k)
-    # Drop the "point" part of the index and make the major index the
-    # time-step rather than the nearest neighbor index, k.
-    df = (
-            p_ds.to_dataframe()
-            .droplevel("point")
-            .swaplevel()  # step|time & k
-            .sort_index()
+    # Extract values from radius (number of points for "k").
+    return (
+            pick_points(ds, points, method="nearest", k=k)
+            .sel(point=0)
+            .expand_dims(dim={"radius": [float(radius)]})
     )
-    # Convert the step index to date in order to match results from
-    # `extract_position`.
-    df = df.reset_index()
-    dates = df.step + df.time
-    df.index = pd.MultiIndex.from_arrays([dates, df.k], names=["date", "k"])
-    data_cols = list(ds.data_vars.keys())
-    df = df[[*data_cols]]
-    df.attrs["radius"] = radius
-    return df
 
 
 def extract_quantiles(
@@ -304,18 +295,14 @@ def extract_quantiles(
     data_cols = get_var_names(ds)
     to_merge = []
     for radius in radii:
-        df = (
+        dss = (
                 extract_circular_region(ds, lat=lat, lon=lon, radius=radius)
-                .groupby(level="date")[data_cols]
-                .quantile(quantiles)
-                .rename_axis(index={None: "quantile"})
-                .assign(radius=float(radius))
-                .set_index("radius", append=True)
-                .reorder_levels(["radius", "date", "quantile"])
-                .rename(columns={c: f"{c}_q" for c in data_cols})
+                .quantile(quantiles, dim="k")
+                .rename({c: f"{c}_q" for c in data_cols})
+                .swap_dims({"step": "date"})
         )
-        to_merge.append(df)
-    return pd.concat(to_merge)
+        to_merge.append(dss)
+    return xr.concat(to_merge, dim="radius")
 
 
 def extract_mean(
@@ -327,17 +314,14 @@ def extract_mean(
     data_cols = get_var_names(ds)
     to_merge = []
     for radius in radii:
-        df = (
+        dss = (
                 extract_circular_region(ds, lat=lat, lon=lon, radius=radius)
-                .groupby(level="date")[data_cols]
-                .mean()
-                .assign(radius=float(radius))
-                .set_index("radius", append=True)
-                .reorder_levels(["radius", "date"])
-                .rename(columns={c: f"{c}_m" for c in data_cols})
+                .mean(dim="k")
+                .rename({c: f"{c}_m" for c in data_cols})
+                .swap_dims({"step": "date"})
         )
-        to_merge.append(df)
-    return pd.concat(to_merge)
+        to_merge.append(dss)
+    return xr.concat(to_merge, dim="radius")
 
 
 def add_coverage(ds, threshold=1e-4) -> None:
@@ -416,10 +400,15 @@ class HerbieQuery(QueryBase):
                 case _:
                     ds = get_quantity(**kwargs)
             dss = subset_rectangular_region(ds, lat=lat, lon=lon)
-            p_df = extract_position(dss, lat=lat, lon=lon).to_xarray()
-            m_df = extract_mean(dss, lat=lat, lon=lon).to_xarray()
-            q_df = extract_quantiles(dss, lat=lat, lon=lon).to_xarray()
-            self.ds  = dss.merge(p_df).merge(m_df).merge(q_df)
+            p_ds = extract_position(dss, lat=lat, lon=lon)
+            m_ds = extract_mean(dss, lat=lat, lon=lon)
+            q_ds = extract_quantiles(dss, lat=lat, lon=lon)
+            self.ds = (
+                    dss
+                    .merge(p_ds, compat="override")
+                    .merge(q_ds, compat="override")
+                    .merge(m_ds, compat="override")
+            )
             add_coverage(self.ds)
         except:
             logger.exception("Error retrieving HRRR data.")

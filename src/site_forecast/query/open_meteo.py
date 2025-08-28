@@ -139,6 +139,7 @@ def request_data(
 
 class OpenMeteoQuery(QueryBase):
     delta = pd.Timedelta("12.5h")
+    freq = "15min"
 
     def __init__(self, **kwargs):
         """
@@ -170,14 +171,14 @@ class OpenMeteoQuery(QueryBase):
     def to_model_series(self) -> TimeSeries:
         if self.okay:
             df_subset = to_training_subset(self.df)
-            return timeseries_from_dataframe(df_subset)
+            return timeseries_from_dataframe(df_subset, freq=self.freq)
         else:
             start = self.forecast_time - self.delta
             end = self.forecast_time + self.delta
             dates = pd.date_range(
                     start=start,
                     end=end,
-                    freq="15min",
+                    freq=self.freq,
             )
             df = pd.DataFrame(
                     {
@@ -186,7 +187,7 @@ class OpenMeteoQuery(QueryBase):
                     },
                     index=dates,
             )
-            return timeseries_from_dataframe(df)
+            return timeseries_from_dataframe(df, freq=self.freq)
 
     def save_data(self, outname: Union[Path, str]="weather") -> None:
         if not self.okay:

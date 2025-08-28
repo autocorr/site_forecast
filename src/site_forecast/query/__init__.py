@@ -54,11 +54,19 @@ def to_netcdf(ds: Dataset, path: Path) -> None:
     ds.to_netcdf(out_path)
 
 
-def timeseries_from_dataframe(df: DataFrame) -> TimeSeries:
+def timeseries_from_dataframe(df: DataFrame, freq: Optional[str]=None) -> TimeSeries:
+    """
+    First attempt to infer the frequency using the ``fill_missing_dates``
+    option in ``TimeSeries.from_dataframe``. If there are individual missing
+    values, this method fail, so further attempts are made by specifying
+    fixed sampling rates. The `TimeSeries` are used by darts for model
+    prediction, and only the API data (10 min) and open-meteo weather data
+    (15/60 min) are used, so this should cover the majority of cases.
+    """
     df = df.copy()
     if df.index.tz is not None:
         df.index = df.index.tz_convert("UTC").tz_convert(None)
-    return TimeSeries.from_dataframe(df, fill_missing_dates=True)
+    return TimeSeries.from_dataframe(df, fill_missing_dates=True, freq=freq)
 
 
 def normalize_time(time: Timestamp) -> Timestamp:

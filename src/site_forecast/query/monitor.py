@@ -243,7 +243,7 @@ class ApiQuery(MonitorPointDbQuery):
     def to_model_series(self) -> Optional[TimeSeries]:
         if self.okay_for_model:
             return (
-                    timeseries_from_dataframe(self.df[["phase_rms"]])
+                    timeseries_from_dataframe(self.df[["phase_rms"]], freq="10min")
                     .resample("15min", method="interpolate")
             )
         else:
