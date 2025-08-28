@@ -648,7 +648,7 @@ def plot_herbie_quantile_waterfall(hq, outstem="waterfall") -> None:
     axes.flat[0].axis("off")
     for radius, ax in zip(ds.radius, axes.flat[1:]):
         s_ds = hq.ds.sel(radius=radius)
-        data = s_ds[f"{hq.query_type}_q"].values.T.copy()
+        data = s_ds[f"{hq.query_type}_q"].values.copy()
         data[data <= 1e-34] = 0
         radius_km = f"{radius:0>2.1f} km"
         extent = (
