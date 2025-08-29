@@ -256,7 +256,16 @@ def style_single_panel_plot(ax, fc) -> plt.Axes:
     return ax
 
 
-def add_previous_phases(ax, fc) -> plt.Axes:
+def draw_all_api_baselines(ax, fc) -> plt.Axes:
+    df = fc.phase.df
+    cmap = plt.cm.managua
+    for i in range(6):
+        color = cmap(i/5)
+        ax.plot(df.index, df[f"rms_phase{i}"], color=color, label=str(i))
+    return ax
+
+
+def draw_previous_phases(ax, fc) -> plt.Axes:
     previous_forecasts, utc_offsets = fc.get_previous_phase_forecasts()
     n_offsets = len(utc_offsets)
     alpha = 0.3
@@ -276,7 +285,7 @@ def draw_phase_rms(ax, fc, overplot_previous=True) -> plt.Axes:
     p_df = fc.phase.df
     f_df = fc.predict.df
     if overplot_previous:
-        add_previous_phases(ax, fc)
+        draw_previous_phases(ax, fc)
     if fc.phase.okay:
         ax.plot(p_df.index.to_pydatetime(), p_df.phase_rms, "k-",
                 drawstyle="steps-mid")
@@ -293,12 +302,39 @@ def draw_phase_rms(ax, fc, overplot_previous=True) -> plt.Axes:
     return ax
 
 
-def plot_phase_rms(fc, overplot_previous=True, outname="phase_rms") -> None:
+def plot_phase_rms_forecast(fc, overplot_previous=True, outname="phase_rms") -> None:
     if not fc.phase.okay and not fc.predict.okay:
         logger.warn(f"Skipping plot: {outname}")
         return
     fig, ax = plt.subplots(figsize=(4, 3))
     draw_phase_rms(ax, fc, overplot_previous=overplot_previous)
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_phase_rms_past(fc, outname="phase_rms_past") -> None:
+    if not fc.phase.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    p_df = fc.phase.df
+    fig, ax = plt.subplots(figsize=(4, 3))
+    draw_all_api_baselines(ax, fc)
+    # Phase RMS for OST
+    ax.plot(p_df.index, p_df.rms_phase_for_ost, "w-", drawstyle="steps-mid", linewidth=3)
+    ax.plot(p_df.index, p_df.rms_phase_for_ost, color="firebrick", drawstyle="steps-mid", label="OST")
+    # Median phase RMS
+    ax.plot(p_df.index, p_df.phase_rms, "w-", drawstyle="steps-mid", linewidth=3)
+    ax.plot(p_df.index, p_df.phase_rms, "k-", drawstyle="steps-mid", label="Med.")
+    ax.legend(loc="upper left", fontsize=8, ncols=4, handlelength=1,
+            framealpha=0.6, columnspacing=1)
+    style_single_panel_plot(ax, fc)
+    ax.set_ylabel("Phase RMS [deg]")
+    delta = pd.Timedelta("10min")
+    ax.set_xlim(
+            fc.forecast_time - pd.Timedelta("12h") - delta,
+            fc.forecast_time + delta,
+    )
+    ax.set_ylim(0, 46)
+    add_phase_limits(ax)
     savefig(outname, t_forecast=fc.forecast_time)
 
 
@@ -712,7 +748,8 @@ def plot_operator_summary(fc, outname="summary") -> None:
 
 
 def plot_all_weather(fc):
-    plot_phase_rms(fc)
+    plot_phase_rms_forecast(fc)
+    plot_phase_rms_past(fc)
     plot_wind(fc)
     plot_temperature(fc)
     plot_direct_radiation(fc)
