@@ -741,9 +741,9 @@ def draw_band_limit_strip(ax, fc) -> plt.Axes:
     # mean-time, just throw this into a try/except, since we're only using
     # this for plotting at the current time and it's okay if it doesn't plot.
     # Limits for:  [ Q,  A,  K,  U, >X]
-    wind_limits  = [ 5,  6,  7, 10, 15]
-    phase_limits = [ 5,  7, 10, 15, 30]
-    selfc_limits = [10, 14, 20, 30, 60]
+    wind_limits  = [ 5,  6,  7, 10, 15]  # m/s
+    phase_limits = [ 5,  7, 10, 15, 30]  # deg
+    selfc_limits = [10, 14, 20, 30, 60]  # deg
     try:
         # Get the time axis for (0, +8) hr
         when = fc.forecast_time.round("15min")
@@ -755,7 +755,7 @@ def draw_band_limit_strip(ax, fc) -> plt.Axes:
         c_df.index = c_df.index.tz_localize("utc")
         for i_t, t in enumerate(time):
             this_phase = p_df.loc[t]
-            this_wind  = w_df.loc[t]
+            this_wind  = w_df.loc[t] * KMHOUR_TO_MS
             this_cloud = c_df.loc[t]
             for i_l, (w_limit, p_limit) in enumerate(zip(wind_limits, phase_limits)):
                 if this_wind > w_limit or this_phase > p_limit:
