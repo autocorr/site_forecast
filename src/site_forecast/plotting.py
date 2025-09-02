@@ -734,6 +734,12 @@ def draw_operator_cloud_series(ax, fc) -> plt.Axes:
 
 
 def draw_band_limit_strip(ax, fc) -> plt.Axes:
+    # FIXME This code will be fairly brittle because it relies on indexing into
+    # each of the respective quantities, and there's currently no error-checking
+    # on if the data products are well-formed. This should be refactored into
+    # a specific class that evaluates band limits from the values, but in the
+    # mean-time, just throw this into a try/except, since we're only using
+    # this for plotting at the current time and it's okay if it doesn't plot.
     # Limits for:  [ Q,  A,  K,  U, >X]
     wind_limits  = [ 5,  6,  7, 10, 15]
     phase_limits = [ 5,  7, 10, 15, 30]
