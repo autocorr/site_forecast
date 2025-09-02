@@ -716,15 +716,7 @@ def plot_herbie_quantile_waterfall(hq, outstem="waterfall") -> None:
     savefig(outname, t_forecast=hq.forecast_time)
 
 
-def plot_operator_summary(fc, outname="summary") -> None:
-    """
-    Plot a summary of (a) phase RMS, (b) wind speed, (c) cloud coverage for
-    MCC, TCOLW, and VERIL.
-    """
-    fig, axes = plt.subplots(figsize=(5, 7), nrows=3, sharex=True)
-    ax1, ax2, ax3 = axes
-    draw_phase_rms(ax1, fc)
-    draw_wind(ax2, fc)
+def draw_operator_cloud_series(ax, fc) -> plt.Axes:
     colors = {"mcc": "0.3", "tcolw": "dodgerblue", "veril": "firebrick"}
     for label, hq in fc.herbie_queries.items():
         if not hq.okay:
@@ -732,19 +724,70 @@ def plot_operator_summary(fc, outname="summary") -> None:
             continue
         ds = hq.ds
         s_ds = ds.sel(radius=10.0)
-        ax3.plot(s_ds.date, s_ds[f"{hq.query_type}_c"], color=colors[label],
+        ax.plot(s_ds.date, s_ds[f"{hq.query_type}_c"], color=colors[label],
                 drawstyle="steps-mid", label=label.upper())
-    style_single_panel_plot(ax3, fc)
-    ax3.set_ylim(-0.05, 1.05)
-    ax3.set_ylabel(f"Cloud Coverage")
-    ax3.legend(loc="lower right", fontsize=8, handlelength=1, framealpha=0.6)
-    ax3.set_xlim(
+    style_single_panel_plot(ax, fc)
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_ylabel(f"Cloud Coverage")
+    ax.legend(loc="lower right", fontsize=8, handlelength=1, framealpha=0.6)
+    return ax
+
+
+def draw_band_limit_strip(ax, fc) -> plt.Axes:
+    # Limits for:  [ Q,  A,  K,  U, >X]
+    wind_limits  = [ 5,  6,  7, 10, 15]
+    phase_limits = [ 5,  7, 10, 15, 30]
+    selfc_limits = [10, 14, 20, 30, 60]
+    try:
+        # Get the time axis for (0, +8) hr
+        when = fc.forecast_time.round("15min")
+        time = pd.date_range(when, when+pd.Timedelta("9h"), freq="15min")
+        band = np.zeros(len(time), dtype=int)
+        p_df = fc.predict.df["phase_rms"]
+        w_df = fc.weather.df["wind_speed_10m"]
+        c_df = fc.herbie_queries["tcolw"].ds.sel(quantile=0.8, radius=10.0).tcolw_q.to_dataframe()["tcolw_q"]
+        c_df.index = c_df.index.tz_localize("utc")
+        for i_t, t in enumerate(time):
+            this_phase = p_df.loc[t]
+            this_wind  = w_df.loc[t]
+            this_cloud = c_df.loc[t]
+            for i_l, (w_limit, p_limit) in enumerate(zip(wind_limits, phase_limits)):
+                if this_wind > w_limit or this_phase > p_limit:
+                    band[i_t] = i_l
+                if this_cloud > 1e-1:
+                    band[i_t] = 4  # >X
+        # Plot values
+        cmap = ListedColormap(
+                ["darkorchid", "royalblue", "mediumturquoise", "gold", "0.5"],
+        )
+        ax.imshow(band.reshape((1, -1)), cmap=cmap, vmin=0, vmax=4,
+                aspect="auto", extent=[time.min(), time.max(), -0.4, 0.4])
+        ax.tick_params(axis="y", labelleft=False)
+        ax.set_yticks([])
+    except:
+        logger.warn("Could not draw band limits in operator summary.")
+    return ax
+
+
+def plot_operator_summary(fc, outname="summary") -> None:
+    """
+    Plot a summary of (a) phase RMS, (b) wind speed, (c) cloud coverage for
+    MCC, TCOLW, and VERIL.
+    """
+    fig, axes = plt.subplots(figsize=(5, 7.5), nrows=4, sharex=True,
+            height_ratios=[0.1, 1, 1, 1])
+    ax1, ax2, ax3, ax4 = axes
+    draw_band_limit_strip(ax1, fc)
+    draw_phase_rms(ax2, fc)
+    draw_wind(ax3, fc)
+    draw_operator_cloud_series(ax4, fc)
+    for ax in axes:
+        ax.label_outer()
+    ax4.set_xlim(
             fc.forecast_time+pd.Timedelta("-1.5h"),
             fc.forecast_time+pd.Timedelta("+9.0h"),
     )
-    for ax in axes:
-        ax.label_outer()
-    savefig(outname, t_forecast=fc.forecast_time)
+    savefig(outname, t_forecast=fc.forecast_time, h_pad=0.15)
 
 
 def plot_all_weather(fc):

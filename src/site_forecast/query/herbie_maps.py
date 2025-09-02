@@ -253,12 +253,14 @@ def extract_position(
     # Select all time steps for point 0 and neighbor/k 0. Data points have
     # already been weighted and averaged and all k values are identical.
     names = list(p_ds.data_vars.keys())
-    return (
+    dss = (
             p_ds
             .sel(k=0, point=0)
             .rename({s: f"{s}_p" for s in names})
-            .swap_dims({"step": "date"})
     )
+    if "step" in dss.dims:
+        dss = dss.swap_dims({"step": "date"})
+    return dss
 
 
 def extract_circular_region(
@@ -299,8 +301,9 @@ def extract_quantiles(
                 extract_circular_region(ds, lat=lat, lon=lon, radius=radius)
                 .quantile(quantiles, dim="k")
                 .rename({c: f"{c}_q" for c in data_cols})
-                .swap_dims({"step": "date"})
         )
+        if "step" in dss.dims:
+            dss = dss.swap_dims({"step": "date"})
         to_merge.append(dss)
     return xr.concat(to_merge, dim="radius")
 
@@ -318,8 +321,9 @@ def extract_mean(
                 extract_circular_region(ds, lat=lat, lon=lon, radius=radius)
                 .mean(dim="k")
                 .rename({c: f"{c}_m" for c in data_cols})
-                .swap_dims({"step": "date"})
         )
+        if "step" in dss.dims:
+            dss = dss.swap_dims({"step": "date"})
         to_merge.append(dss)
     return xr.concat(to_merge, dim="radius")
 
