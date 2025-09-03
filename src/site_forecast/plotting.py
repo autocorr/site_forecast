@@ -166,18 +166,19 @@ def fix_minus_labels(ax, x=False, y=False):
 
 
 def add_phase_limits(ax):
-    """Overplot atmospheric phase limits for Q, K, U, and X Bands."""
-    for limit in (5, 10, 15, 30):  # deg
-        ax.axhline(limit, color="deepskyblue", linestyle="dashed", linewidth=1.2, zorder=-2)
+    """Overplot atmospheric phase limits for Q, A, K, U, and X Bands."""
+    for limit in (5, 7, 10, 15, 30):  # deg
+        ax.axhline(limit, color="deepskyblue", linestyle="dashed", linewidth=1.0, zorder=-2)
 
 
 def add_wind_limits(ax):
     """
-    Overplot wind speed limits for Q, K, U, and X Bands and the stow limit of
+    Overplot wind speed limits for Q, A, K, U, and X Bands and the stow limit of
     20 m/s.
     """
-    for limit in (5, 7, 10, 15):  # m/s
-        ax.axhline(limit, color="deepskyblue", linestyle="dashed", linewidth=1.2, zorder=-2)
+    for limit in (5, 6, 7, 10, 15):  # m/s
+        ax.axhline(limit, color="deepskyblue", linestyle="dashed", linewidth=1.0, zorder=-2)
+    # Stow limit of 20 m/s (45 mph)
     ax.axhline(20, color="darkorange", linestyle="dashed", linewidth=1.2, zorder=-2)
 
 
@@ -740,7 +741,11 @@ def draw_band_limit_strip(ax, fc) -> plt.Axes:
     # a specific class that evaluates band limits from the values, but in the
     # mean-time, just throw this into a try/except, since we're only using
     # this for plotting at the current time and it's okay if it doesn't plot.
-    # Limits for:  [ Q,  A,  K,  U, >X]
+    # Cloud mass surface density limit:
+    cloud_limit  = 1e-1  # kg/m^2
+    # Wind and X Band phase RMS limits for:
+    # Band name:   [ Q,  A,  K,  U,  X, >X]
+    # Index:       [ 0,  1,  2,  3,  4,  5]
     wind_limits  = [ 5,  6,  7, 10, 15]  # m/s
     phase_limits = [ 5,  7, 10, 15, 30]  # deg
     selfc_limits = [10, 14, 20, 30, 60]  # deg
@@ -749,25 +754,29 @@ def draw_band_limit_strip(ax, fc) -> plt.Axes:
         when = fc.forecast_time.round("15min")
         time = pd.date_range(when, when+pd.Timedelta("9h"), freq="15min")
         band = np.zeros(len(time), dtype=int)
-        p_df = fc.predict.df["phase_rms"]
-        w_df = fc.weather.df["wind_speed_10m"]
-        c_df = fc.herbie_queries["tcolw"].ds.sel(quantile=0.8, radius=10.0).tcolw_q.to_dataframe()["tcolw_q"]
-        c_df.index = c_df.index.tz_localize("utc")
+        pr_df = fc.predict.df["phase_rms"]
+        ws_df = fc.weather.df["wind_speed_10m"] * KMHOUR_TO_MS
+        c1_df = fc.herbie_queries["tcolw"].ds.sel(quantile=0.8, radius=10.0).tcolw_q.to_dataframe()["tcolw_q"]
+        c2_df = fc.herbie_queries["tcolw"].ds.sel(quantile=0.8, radius=20.0).tcolw_q.to_dataframe()["tcolw_q"]
+        c1_df.index = c1_df.index.tz_localize("utc")
+        c2_df.index = c2_df.index.tz_localize("utc")
         for i_t, t in enumerate(time):
-            this_phase = p_df.loc[t]
-            this_wind  = w_df.loc[t] * KMHOUR_TO_MS
-            this_cloud = c_df.loc[t]
+            this_phase  = pr_df.loc[t]
+            this_wind   = ws_df.loc[t]
+            this_cloud1 = c1_df.loc[t]
+            this_cloud2 = c2_df.loc[t]
             for i_l, (w_limit, p_limit) in enumerate(zip(wind_limits, phase_limits)):
                 if this_wind > w_limit or this_phase > p_limit:
-                    band[i_t] = i_l
-                if this_cloud > 1e-1:
-                    band[i_t] = 4  # >X
+                    band[i_t] = i_l + 1
+                if this_cloud1 > cloud_limit or this_cloud2 > cloud_limit:
+                    band[i_t] = np.maximum(band[i_t], 3)  # Ku, X, or >X
         # Plot values
         cmap = ListedColormap(
-                ["darkorchid", "royalblue", "mediumturquoise", "gold", "0.5"],
+                ["darkorchid", "royalblue", "mediumturquoise", "gold", "0.5", "0.3"],
         )
-        ax.imshow(band.reshape((1, -1)), cmap=cmap, vmin=0, vmax=4,
-                aspect="auto", extent=[time.min(), time.max(), -0.4, 0.4])
+        norm = plt.Normalize(vmin=-0.5, vmax=5.5)
+        ax.imshow(band.reshape((1, -1)), cmap=cmap, norm=norm, aspect="auto",
+                extent=[time.min(), time.max(), -0.4, 0.4])
         ax.tick_params(axis="y", labelleft=False)
         ax.set_yticks([])
     except:
