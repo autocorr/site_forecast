@@ -775,8 +775,11 @@ def draw_band_limit_strip(ax, fc) -> plt.Axes:
                 ["darkorchid", "royalblue", "mediumturquoise", "gold", "0.5", "0.3"],
         )
         norm = plt.Normalize(vmin=-0.5, vmax=5.5)
+        tmin = time.min()
+        tmax = time.max() + pd.Timedelta("15min")
         ax.imshow(band.reshape((1, -1)), cmap=cmap, norm=norm, aspect="auto",
-                extent=[time.min(), time.max(), -0.4, 0.4])
+                extent=[tmin, tmax, -0.4, 0.4])
+        ax.axvline(when, color="magenta", linestyle="dotted", zorder=-1)
         ax.tick_params(axis="y", labelleft=False)
         ax.set_yticks([])
     except:
