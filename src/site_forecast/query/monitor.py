@@ -78,7 +78,8 @@ class MonitorConnection:
                 user=None,
                 password=None,
                 dbname=None,
-                timeout_length=15,
+                #timeout_length=15,
+                timeout_length=60,
         ):
         if timeout_length <= 0:
             raise ValueError(f"Timeout duration must be greater than zero: {timeout_length}")
@@ -116,7 +117,10 @@ class MonitorConnection:
         }
         with self.connection.cursor() as cursor:
             cursor.execute(f"SET statement_timeout = {self.timeout_length_ms}")
-            cursor.execute(SQL_QUERY, params)
+            try:
+                cursor.execute(SQL_QUERY, params)
+            except psycopg2.errors.QueryCanceled:
+                logger.exception("SQL timeout", SQL_QUERY % params)
             rows = cursor.fetchall()
             return rows
 

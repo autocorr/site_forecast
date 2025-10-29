@@ -4,6 +4,7 @@ os.environ["DARTS_CONFIGURE_MATPLOTLIB"] = "0"
 
 import logging
 import configparser
+import multiprocessing
 from pathlib import Path
 
 import pandas as pd
@@ -103,6 +104,15 @@ def _now_dir(t=None):
     today = now.date().isoformat().replace("-", "/")
     hour = f"{now.hour:02d}"
     return Path(today) / hour
+
+
+def run_with_timeout(func, args=None, kwds=None, timeout=120):
+    args = args if args is not None else tuple()
+    kwds = kwds if kwds is not None else dict()
+    if timeout <= 0:
+        raise ValueError(f"Timeout must be positive: {timeout=}")
+    with multiprocessing.Pool(processes=1) as pool:
+        return pool.apply_async(func, args, kwds).get(timeout=timeout)
 
 
 if __name__ == "__main__":

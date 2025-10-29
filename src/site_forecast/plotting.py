@@ -339,7 +339,7 @@ def plot_phase_rms_past(fc, outname="phase_rms_past") -> None:
     savefig(outname, t_forecast=fc.forecast_time)
 
 
-def draw_wind(ax, fc):
+def draw_wind_speed(ax, fc):
     if fc.station.okay:
         s_df = fc.station.df
         s_dates = s_df.index.to_pydatetime()
@@ -363,12 +363,42 @@ def draw_wind(ax, fc):
     return ax
 
 
-def plot_wind(fc, outname="wind") -> None:
+def plot_wind_speed(fc, outname="wind") -> None:
     if not fc.weather.okay and not fc.station.okay:
         logger.warn(f"Skipping plot: {outname}")
         return
     fig, ax = plt.subplots(figsize=(4, 3))
-    draw_wind(ax, fc)
+    draw_wind_speed(ax, fc)
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_wind_direction(fc, outname="wind_direction") -> None:
+    if not fc.weather.okay and not fc.station.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, ax = plt.subplots(figsize=(4, 3))
+    def scale_sizes(sizes):
+        # Should have a min size of 2.5 and ~max of 12.5
+        scaling_factor = 10.0
+        min_offset = 5  # m/s
+        stow_limit = 20  # m/s
+        return ((sizes + min_offset) / stow_limit * scaling_factor).values
+    if fc.station.okay:
+        s_df = fc.station.df
+        s_dates = s_df.index.to_pydatetime()
+        s_sizes = scale_sizes(s_df.wind_speed_average)
+        ax.scatter(s_dates, s_df.wind_direction_minimum, s=2, c="0.5", marker="o", edgecolors="none")
+        ax.scatter(s_dates, s_df.wind_direction_maximum, s=2, c="0.5", marker="o", edgecolors="none")
+        ax.scatter(s_dates, s_df.wind_direction_average, s=s_sizes, c="0.0", marker="o", edgecolors="none")
+    if fc.weather.okay:
+        w_df = fc.weather.df
+        w_dates = w_df.index.to_pydatetime()
+        w_sizes = scale_sizes(w_df.wind_speed_10m * KMHOUR_TO_MS)
+        ax.scatter(w_dates, w_df.wind_direction_10m, s=w_sizes, c="darkred", marker="o", edgecolors="none")
+    ax.axhline(240, color="rebeccapurple", linestyle="dashed", linewidth=1.0, zorder=-2)
+    ax.set_ylim(0, 360)
+    ax.set_ylabel(r"Wind Direction [deg]")
+    style_single_panel_plot(ax, fc)
     savefig(outname, t_forecast=fc.forecast_time)
 
 
@@ -391,6 +421,26 @@ def plot_temperature(fc, outname="temperature"):
     ax.set_ylabel(r"Temperature [C]")
     style_single_panel_plot(ax, fc)
     savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_pressure(fc, outname="pressure") -> None:
+    if not fc.weather.okay and not fc.station.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, ax = plt.subplots(figsize=(4, 3))
+    if fc.station.okay:
+        s_df = fc.station.df
+        s_dates = s_df.index.to_pydatetime()
+        ax.plot(s_dates, s_df.pressure, "k-", drawstyle="steps-mid")
+    if fc.weather.okay:
+        w_df = fc.weather.df
+        w_dates = w_df.index.to_pydatetime()
+        ax.plot(w_dates, w_df.surface_pressure, color="darkred")
+    ax.set_ylim(765, 805)
+    ax.set_ylabel(r"Pressure [hPa]")
+    style_single_panel_plot(ax, fc)
+    savefig(outname, t_forecast=fc.forecast_time)
+
 
 
 def plot_direct_radiation(fc, outname="direct_radiation"):
@@ -721,7 +771,7 @@ def draw_operator_cloud_series(ax, fc) -> plt.Axes:
     colors = {"mcc": "0.3", "tcolw": "dodgerblue", "veril": "firebrick"}
     for label, hq in fc.herbie_queries.items():
         if not hq.okay:
-            logger.warn(f"Skipping plot '{outname}' panel '{label}'")
+            logger.warn(f"Skipping plot summary panel '{label}'")
             continue
         ds = hq.ds
         s_ds = ds.sel(radius=10.0)
@@ -797,7 +847,7 @@ def plot_operator_summary(fc, outname="summary") -> None:
     ax1, ax2, ax3, ax4 = axes
     draw_band_limit_strip(ax1, fc)
     draw_phase_rms(ax2, fc)
-    draw_wind(ax3, fc)
+    draw_wind_speed(ax3, fc)
     draw_operator_cloud_series(ax4, fc)
     for ax in axes:
         ax.label_outer()
@@ -811,8 +861,10 @@ def plot_operator_summary(fc, outname="summary") -> None:
 def plot_all_weather(fc):
     plot_phase_rms_forecast(fc)
     plot_phase_rms_past(fc)
-    plot_wind(fc)
+    plot_wind_speed(fc)
+    plot_wind_direction(fc)
     plot_temperature(fc)
+    plot_pressure(fc)
     plot_direct_radiation(fc)
     plot_pwv(fc)
     plot_precipitation(fc)

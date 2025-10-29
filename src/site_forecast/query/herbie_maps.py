@@ -1,7 +1,6 @@
 
 import io
 import warnings
-import multiprocessing
 from numbers import Real
 from pathlib import Path
 from contextlib import redirect_stdout
@@ -23,7 +22,7 @@ from . import (
         normalize_time,
         wrap_coordinates,
 )
-from .. import (CONFIG, SITE_LAT, SITE_LON, logger)
+from .. import (CONFIG, SITE_LAT, SITE_LON, logger, run_with_timeout)
 
 
 warnings.filterwarnings(action="ignore", category=FutureWarning,
@@ -52,7 +51,7 @@ def get_quantity(
             time=None,
             fxx=None,
             save_dir=None,
-            timeout=300,  # sec
+            timeout=120,  # sec
     ) -> Dataset:
     if fxx is None:
         fxx = list(range(13))  # 0..12 hours
@@ -65,13 +64,18 @@ def get_quantity(
             last_fxx = fxx
         # Forecasts are uploaded sequentially, so check the most recent valid
         # time of the last forecast needed.
-        hl = herbie.HerbieLatest(
-                model=model,
-                product=product,
-                fxx=last_fxx,
-                overwrite=True,
-                verbose=False,
-                save_dir="/dev/shm",
+        hl = run_with_timeout(
+                herbie.HerbieLatest,
+                kwds={"kwds": dict(
+                        model=model,
+                        product=product,
+                        fxx=last_fxx,
+                        overwrite=True,
+                        verbose=False,
+                        save_dir="/dev/shm",
+
+                )},
+                timeout=timeout,
         )
         time = hl.date
     else:
@@ -80,23 +84,29 @@ def get_quantity(
         save_dir = Path(CONFIG.get("Paths", "herbie", fallback="/dev/shm")).expanduser()
     # Use HerbieLatest to get the latest forecast run and then use FastHerbie
     # to download all the forecast steps for that run.
-    h = herbie.FastHerbie(
-            [time],
-            model=model,
-            product=product,
-            fxx=fxx,
-            overwrite=True,
-            verbose=False,
-            save_dir=save_dir,
+    h = run_with_timeout(
+            herbie.FastHerbie,
+            kwds={
+                "args": tuple([time]),
+                "kwds": dict(
+                        model=model,
+                        product=product,
+                        fxx=fxx,
+                        overwrite=True,
+                        verbose=False,
+                        save_dir=save_dir,
+                ),
+            },
+            timeout=timeout,
     )
     if len(h.objects) == 0:
         raise RuntimeError(f"Empty query: ({quantity=}, {layer=}, {fxx=})")
     search = rf":{quantity}:{layer}:(?:anl|\d+ min fcst|\d+ hour fcst)"
-    df = h.inventory(search)
+    df = run_with_timeout(h.inventory, args=(search,), timeout=timeout)
+    #df = h.inventory(search)
     if df.shape[0] == 0:
         raise RuntimeError(f"Empty inventory: ({quantity=}, {layer=}, {fxx=})")
-    with multiprocessing.Pool(processes=1) as pool:
-        ds = pool.apply_async(h.xarray, (search,)).get(timeout=timeout)
+    ds = run_with_timeout(h.xarray, args=(search,), timeout=timeout)
     # Add "date" alias for the valid time coordinate (forecast time + step)
     # in order to follow the convention of other queries.
     ds = ds.assign_coords(date=ds.valid_time)
