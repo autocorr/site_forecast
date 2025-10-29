@@ -15,6 +15,7 @@ from . import (
         CONFIG,
         KMHOUR_TO_MS,
         logger,
+        run_with_timeout,
         _now_dir,
 )
 from .plotting import plot_all_weather
@@ -187,7 +188,9 @@ class SafeScheduler(Scheduler):
 def loop() -> None:
     scheduler = SafeScheduler()
     scheduler.clear()
-    scheduler.every().hour.at(":30").do(generate)
+    def generate_with_timeout():
+        run_with_timeout(generate, timeout=600)  # 10 min
+    scheduler.every().hour.at(":30").do(generate_with_timeout)
     while True:
         scheduler.run_pending()
         time.sleep(10)  # sec

@@ -66,7 +66,7 @@ def get_quantity(
         # time of the last forecast needed.
         hl = run_with_timeout(
                 herbie.HerbieLatest,
-                kwds={"kwds": dict(
+                kwds=dict(
                         model=model,
                         product=product,
                         fxx=last_fxx,
@@ -74,7 +74,7 @@ def get_quantity(
                         verbose=False,
                         save_dir="/dev/shm",
 
-                )},
+                ),
                 timeout=timeout,
         )
         time = hl.date
@@ -86,17 +86,15 @@ def get_quantity(
     # to download all the forecast steps for that run.
     h = run_with_timeout(
             herbie.FastHerbie,
-            kwds={
-                "args": tuple([time]),
-                "kwds": dict(
-                        model=model,
-                        product=product,
-                        fxx=fxx,
-                        overwrite=True,
-                        verbose=False,
-                        save_dir=save_dir,
-                ),
-            },
+            args=([time],),
+            kwds=dict(
+                    model=model,
+                    product=product,
+                    fxx=fxx,
+                    overwrite=True,
+                    verbose=False,
+                    save_dir=save_dir,
+            ),
             timeout=timeout,
     )
     if len(h.objects) == 0:

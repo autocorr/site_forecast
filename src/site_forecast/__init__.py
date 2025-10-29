@@ -112,7 +112,7 @@ def run_with_timeout(func, args=None, kwds=None, timeout=120):
     if timeout <= 0:
         raise ValueError(f"Timeout must be positive: {timeout=}")
     with multiprocessing.Pool(processes=1) as pool:
-        return pool.apply_async(func, args, kwds).get(timeout=timeout)
+        return pool.apply_async(func, args=args, kwds=kwds).get(timeout=timeout)
 
 
 if __name__ == "__main__":
