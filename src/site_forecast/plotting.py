@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.dates as mdates
 from matplotlib import pyplot as plt
-from matplotlib import patheffects
+from matplotlib import (patches, patheffects)
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 from matplotlib.ticker import AutoMinorLocator, ScalarFormatter
 
@@ -24,6 +24,10 @@ from . import (CONFIG, KMHOUR_TO_MS, TPW_TO_PWV, logger, _now_dir)
 VLA_SITE = EarthLocation.of_site("VLA")
 CMAP = plt.get_cmap("magma")
 CMAP.set_bad("0.85")
+BAND_CMAP = ListedColormap(
+        ["darkorchid", "royalblue", "mediumturquoise", "gold", "0.5", "0.3"],
+)
+BAND_NORM = plt.Normalize(vmin=-0.5, vmax=5.5)
 
 
 warnings.filterwarnings(action="ignore", category=UserWarning,
@@ -165,21 +169,35 @@ def fix_minus_labels(ax, x=False, y=False):
         ])
 
 
-def add_phase_limits(ax):
+def add_phase_limits(ax) -> plt.Axes:
     """Overplot atmospheric phase limits for Q, A, K, U, and X Bands."""
-    for limit in (5, 7, 10, 15, 30):  # deg
+    labels = ["Q", "A", "K", "U", "X"]
+    limits = [  5,   7,  10,  15,  30]  # deg
+    for label, limit in zip(labels, limits):
         ax.axhline(limit, color="deepskyblue", linestyle="dashed", linewidth=1.0, zorder=-2)
+        ax.annotate(label, xy=(1.005, (limit-0.6)/46), xycoords="axes fraction", fontsize=7)
+    return ax
 
 
-def add_wind_limits(ax):
+def add_wind_limits(ax) -> plt.Axes:
     """
     Overplot wind speed limits for Q, A, K, U, and X Bands and the stow limit of
     20 m/s.
     """
-    for limit in (5, 6, 7, 10, 15):  # m/s
-        ax.axhline(limit, color="deepskyblue", linestyle="dashed", linewidth=1.0, zorder=-2)
     # Stow limit of 20 m/s (45 mph)
-    ax.axhline(20, color="darkorange", linestyle="dashed", linewidth=1.2, zorder=-2)
+    labels = ["Q", "A", "K", "U", "X", " !"]
+    limits = [  5,   6,   7,  10,  15,   20]  # m/s
+    for label, limit in zip(labels, limits):
+        if limit == 20:
+            color = "darkorange"
+            linewidth = 1.2
+        else:
+            color = "deepskyblue"
+            linewidth = 1.0
+        la = ax.axhline(limit, color=color, linestyle="dashed",
+                linewidth=linewidth, zorder=-2)
+        ax.annotate(label, xy=(1.005, (limit-0.4)/25), xycoords="axes fraction", fontsize=7)
+    return ax
 
 
 def add_night(ax, t_forecast, delta="1d"):
@@ -220,12 +238,12 @@ def set_dates(ax, minticks=3, maxticks=7):
             "%y",
             "%b",
             "%d",
-            "%H:%M",
+            "%H" if minticks > 12 else "%H:%M",
             "%H:%M",
             "%S.%f",
     ]
     formatter.zero_formats = [""] + formatter.formats[:-1]
-    formatter.zero_formats[3] = "%d %b"
+    formatter.zero_formats[3] = r"%d$\cdot$%b"
     formatter.offset_formats = [
             "",
             "%Y",
@@ -245,15 +263,23 @@ def add_now_line(ax, t_forecast):
     return ax
 
 
-def style_single_panel_plot(ax, fc) -> plt.Axes:
+def style_single_panel_plot(ax, fc, night_delta="1d") -> plt.Axes:
     when = fc.forecast_time
-    add_night(ax, when)
+    add_night(ax, when, delta=night_delta)
     add_now_line(ax, when)
     ax.set_xlabel("UTC Time")
     clip_xlim(ax, when)
     set_dates(ax)
     set_grid(ax)
     set_minor_ticks(ax)
+    return ax
+
+
+def style_single_panel_plot_long(ax, fc) -> plt.Axes:
+    when = fc.forecast_time
+    style_single_panel_plot(ax, fc, night_delta="4d")
+    set_dates(ax, minticks=24, maxticks=24)
+    ax.set_xlim(when-pd.Timedelta("1.5h"), when+pd.Timedelta("3d")+pd.Timedelta("1.5h"))
     return ax
 
 
@@ -266,10 +292,14 @@ def draw_all_api_baselines(ax, fc) -> plt.Axes:
     return ax
 
 
-def draw_previous_phases(ax, fc) -> plt.Axes:
-    previous_forecasts, utc_offsets = fc.get_previous_phase_forecasts()
+def draw_previous_phases(ax, fc, use_long=False) -> plt.Axes:
+    filen = "predicted_phase_long" if use_long else "predicted_phase"
+    n_forecasts = 24 if use_long else 12
+    previous_forecasts, utc_offsets = fc.get_previous_phase_forecasts(
+            filen=filen, n_forecasts=n_forecasts,
+    )
     n_offsets = len(utc_offsets)
-    alpha = 0.3
+    alpha = 0.15 if use_long else 0.30
     for df, offset in zip(previous_forecasts, utc_offsets):
         if df is None:
             continue
@@ -303,12 +333,34 @@ def draw_phase_rms(ax, fc, overplot_previous=True) -> plt.Axes:
     return ax
 
 
+def draw_phase_rms_long(ax, fc, overplot_previous=True) -> plt.Axes:
+    df = fc.predict_long.df
+    when = fc.forecast_time
+    if overplot_previous:
+        draw_previous_phases(ax, fc, use_long=True)
+    ax.plot(df.index.to_pydatetime(), df.phase_rms, linestyle="solid", color="darkred")
+    add_phase_limits(ax)
+    style_single_panel_plot_long(ax, fc)
+    ax.set_ylabel("Phase RMS [deg]")
+    ax.set_ylim(0, 46)
+    return ax
+
+
 def plot_phase_rms_forecast(fc, overplot_previous=True, outname="phase_rms") -> None:
     if not fc.phase.okay and not fc.predict.okay:
         logger.warn(f"Skipping plot: {outname}")
         return
     fig, ax = plt.subplots(figsize=(4, 3))
     draw_phase_rms(ax, fc, overplot_previous=overplot_previous)
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_phase_rms_forecast_long(fc, outname="phase_rms_long") -> None:
+    if not fc.predict_long.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, ax = plt.subplots(figsize=(8, 3))
+    draw_phase_rms_long(ax, fc)
     savefig(outname, t_forecast=fc.forecast_time)
 
 
@@ -339,7 +391,7 @@ def plot_phase_rms_past(fc, outname="phase_rms_past") -> None:
     savefig(outname, t_forecast=fc.forecast_time)
 
 
-def draw_wind_speed(ax, fc):
+def draw_wind_speed(ax, fc) -> plt.Axes:
     if fc.station.okay:
         s_df = fc.station.df
         s_dates = s_df.index.to_pydatetime()
@@ -363,12 +415,37 @@ def draw_wind_speed(ax, fc):
     return ax
 
 
+def draw_wind_speed_long(ax, fc) -> plt.Axes:
+    when = fc.forecast_time
+    w_df = fc.weather.df
+    w_dates = w_df.index.to_pydatetime()
+    ax.fill_between(w_dates, w_df.wind_speed_10m * KMHOUR_TO_MS,
+            w_df.wind_gusts_10m * KMHOUR_TO_MS, facecolor="red",
+            edgecolor="none", alpha=0.5, step="mid")
+    ax.plot(w_dates, w_df.wind_speed_10m * KMHOUR_TO_MS, color="darkred",
+            drawstyle="steps-mid")
+    add_wind_limits(ax)
+    style_single_panel_plot_long(ax, fc)
+    ax.set_ylabel(r"Wind Speed [$\mathrm{m\,s^{-1}}$]")
+    ax.set_ylim(0, 25)
+    return ax
+
+
 def plot_wind_speed(fc, outname="wind") -> None:
     if not fc.weather.okay and not fc.station.okay:
         logger.warn(f"Skipping plot: {outname}")
         return
     fig, ax = plt.subplots(figsize=(4, 3))
     draw_wind_speed(ax, fc)
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_wind_speed_long(fc, outname="wind_long") -> None:
+    if not fc.weather.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, ax = plt.subplots(figsize=(8, 3))
+    draw_wind_speed_long(ax, fc)
     savefig(outname, t_forecast=fc.forecast_time)
 
 
@@ -767,7 +844,7 @@ def plot_herbie_quantile_waterfall(hq, outstem="waterfall") -> None:
     savefig(outname, t_forecast=hq.forecast_time)
 
 
-def draw_operator_cloud_series(ax, fc) -> plt.Axes:
+def draw_summary_cloud_series(ax, fc) -> plt.Axes:
     colors = {"mcc": "0.3", "tcolw": "dodgerblue", "veril": "firebrick"}
     for label, hq in fc.herbie_queries.items():
         if not hq.okay:
@@ -784,7 +861,28 @@ def draw_operator_cloud_series(ax, fc) -> plt.Axes:
     return ax
 
 
-def draw_band_limit_strip(ax, fc) -> plt.Axes:
+def draw_summary_cloud_series_long(ax, fc) -> plt.Axes:
+    styling = {
+            "high": ("skyblue", "", "lightblue"),
+            "mid": ("dodgerblue", "////", "none"),
+            "low": ("darkslateblue", "\\\\\\\\", "none"),
+    }
+    w_df = fc.weather.df
+    w_dates = w_df.index.to_pydatetime()
+    zeros = np.zeros(w_dates.shape[0])
+    for label, (edgecolor, hatch, facecolor) in styling.items():
+        series = w_df[f"cloud_cover_{label}"] / 100
+        ax.fill_between(w_dates, zeros, series, facecolor=facecolor,
+                edgecolor=edgecolor, hatch=hatch, linewidth=1.2,
+                label=label.title())
+    style_single_panel_plot_long(ax, fc)
+    ax.set_ylabel("Cloud Coverage")
+    ax.set_ylim(-0.05, 1.05)
+    ax.legend(loc="upper right", fontsize=8, handlelength=1, framealpha=0.6)
+    return ax
+
+
+def draw_band_limit_strip(ax, fc, use_long=False) -> plt.Axes:
     # FIXME This code will be fairly brittle because it relies on indexing into
     # each of the respective quantities, and there's currently no error-checking
     # on if the data products are well-formed. This should be refactored into
@@ -792,7 +890,8 @@ def draw_band_limit_strip(ax, fc) -> plt.Axes:
     # mean-time, just throw this into a try/except, since we're only using
     # this for plotting at the current time and it's okay if it doesn't plot.
     # Cloud mass surface density limit:
-    cloud_limit  = 1e-1  # kg/m^2
+    tcolw_limit = 1e-1  # kg/m^2
+    cover_limit = 0.25  # unitless
     # Wind and X Band phase RMS limits for:
     # Band name:   [ Q,  A,  K,  U,  X, >X]
     # Index:       [ 0,  1,  2,  3,  4,  5]
@@ -800,34 +899,46 @@ def draw_band_limit_strip(ax, fc) -> plt.Axes:
     phase_limits = [ 5,  7, 10, 15, 30]  # deg
     selfc_limits = [10, 14, 20, 30, 60]  # deg
     try:
-        # Get the time axis for (0, +8) hr
+        # Get the time axis for (0, +9) hr
         when = fc.forecast_time.round("15min")
-        time = pd.date_range(when, when+pd.Timedelta("9h"), freq="15min")
-        band = np.zeros(len(time), dtype=int)
-        pr_df = fc.predict.df["phase_rms"]
-        ws_df = fc.weather.df["wind_speed_10m"] * KMHOUR_TO_MS
-        c1_df = fc.herbie_queries["tcolw"].ds.sel(quantile=0.8, radius=10.0).tcolw_q.to_dataframe()["tcolw_q"]
-        c2_df = fc.herbie_queries["tcolw"].ds.sel(quantile=0.8, radius=20.0).tcolw_q.to_dataframe()["tcolw_q"]
-        c1_df.index = c1_df.index.tz_localize("utc")
-        c2_df.index = c2_df.index.tz_localize("utc")
-        for i_t, t in enumerate(time):
-            this_phase  = pr_df.loc[t]
-            this_wind   = ws_df.loc[t]
-            this_cloud1 = c1_df.loc[t]
-            this_cloud2 = c2_df.loc[t]
-            for i_l, (w_limit, p_limit) in enumerate(zip(wind_limits, phase_limits)):
-                if this_wind > w_limit or this_phase > p_limit:
-                    band[i_t] = i_l + 1
-                if this_cloud1 > cloud_limit or this_cloud2 > cloud_limit:
-                    band[i_t] = np.maximum(band[i_t], 3)  # Ku, X, or >X
+        if not use_long:
+            time = pd.date_range(when, when+pd.Timedelta("9h"), freq="15min")
+            band = np.zeros(len(time), dtype=int)
+            pr_df = fc.predict.df["phase_rms"]
+            ws_df = fc.weather.df["wind_speed_10m"] * KMHOUR_TO_MS
+            c1_df = fc.herbie_queries["tcolw"].ds.sel(quantile=0.8, radius=10.0).tcolw_q.to_dataframe()["tcolw_q"]
+            c2_df = fc.herbie_queries["tcolw"].ds.sel(quantile=0.8, radius=20.0).tcolw_q.to_dataframe()["tcolw_q"]
+            c1_df.index = c1_df.index.tz_localize("utc")
+            c2_df.index = c2_df.index.tz_localize("utc")
+            for i_t, t in enumerate(time):
+                this_phase  = pr_df.loc[t]
+                this_wind   = ws_df.loc[t]
+                this_cloud1 = c1_df.loc[t]
+                this_cloud2 = c2_df.loc[t]
+                for i_l, (w_limit, p_limit) in enumerate(zip(wind_limits, phase_limits)):
+                    if this_wind > w_limit or this_phase > p_limit:
+                        band[i_t] = i_l + 1
+                    if this_cloud1 > tcolw_limit or this_cloud2 > tcolw_limit:
+                        band[i_t] = np.maximum(band[i_t], 3)  # Ku, X, or >X
+        else:
+            time = pd.date_range(when+pd.Timedelta("15m"), when+pd.Timedelta("71h"), freq="15min")
+            band = np.zeros(len(time), dtype=int)
+            pr_df = fc.predict_long.df["phase_rms"]
+            ws_df = fc.weather.df["wind_speed_10m"] * KMHOUR_TO_MS
+            cc_df = fc.weather.df["cloud_cover_mid"]
+            for i_t, t in enumerate(time):
+                this_phase = pr_df.loc[t]
+                this_wind  = ws_df.loc[t]
+                this_cloud = cc_df.loc[t] / 100
+                for i_l, (w_limit, p_limit) in enumerate(zip(wind_limits, phase_limits)):
+                    if this_wind > w_limit or this_phase > p_limit:
+                        band[i_t] = i_l + 1
+                    if this_cloud > cover_limit:
+                        band[i_t] = np.maximum(band[i_t], 3)  # Ku, X, or >X
         # Plot values
-        cmap = ListedColormap(
-                ["darkorchid", "royalblue", "mediumturquoise", "gold", "0.5", "0.3"],
-        )
-        norm = plt.Normalize(vmin=-0.5, vmax=5.5)
         tmin = time.min()
         tmax = time.max() + pd.Timedelta("15min")
-        ax.imshow(band.reshape((1, -1)), cmap=cmap, norm=norm, aspect="auto",
+        ax.imshow(band.reshape((1, -1)), cmap=BAND_CMAP, norm=BAND_NORM, aspect="auto",
                 extent=[tmin, tmax, -0.4, 0.4])
         ax.axvline(when, color="magenta", linestyle="dotted", zorder=-1)
         ax.tick_params(axis="y", labelleft=False)
@@ -837,10 +948,20 @@ def draw_band_limit_strip(ax, fc) -> plt.Axes:
     return ax
 
 
+def add_band_limit_legend(ax) -> plt.Axes:
+    legend_patches = [
+            patches.Patch(color=BAND_CMAP(i), label=s)
+            for i, s in zip(range(0, 6), ["Q", "A", "K", "U", "X", ""])
+    ]
+    ax.legend(handles=legend_patches, loc="upper right", fontsize=8, ncols=2,
+            handlelength=1, framealpha=0.6, columnspacing=1)
+    return ax
+
+
 def plot_operator_summary(fc, outname="summary") -> None:
     """
-    Plot a summary of (a) phase RMS, (b) wind speed, (c) cloud coverage for
-    MCC, TCOLW, and VERIL.
+    Plot a 9 hour forecast summary of (a) phase RMS, (b) wind speed, (c) cloud
+    coverage for MCC, TCOLW, and VERIL.
     """
     fig, axes = plt.subplots(figsize=(5, 7.5), nrows=4, sharex=True,
             height_ratios=[0.1, 1, 1, 1])
@@ -848,7 +969,8 @@ def plot_operator_summary(fc, outname="summary") -> None:
     draw_band_limit_strip(ax1, fc)
     draw_phase_rms(ax2, fc)
     draw_wind_speed(ax3, fc)
-    draw_operator_cloud_series(ax4, fc)
+    draw_summary_cloud_series(ax4, fc)
+    add_band_limit_legend(ax2)
     for ax in axes:
         ax.label_outer()
     ax4.set_xlim(
@@ -858,11 +980,39 @@ def plot_operator_summary(fc, outname="summary") -> None:
     savefig(outname, t_forecast=fc.forecast_time, h_pad=0.15)
 
 
+def plot_operator_summary_long(fc, outname="summary_long") -> None:
+    """
+    Plot a 3 day (72 hour) forecast summary of (a) phase RMS using the
+    "no_phase" model, (b) wind speed, and (c) different cloud optical cloud
+    coverage fractions (e.g., MCC). Open-meteo's "seamless" products are used,
+    so should provide a combination of most recent 18 hour data, 48 hour data
+    up to the last 6-hourly run, and data beyond that using the 0.11 deg GFS.
+    """
+    fig, axes = plt.subplots(figsize=(8.0, 7.5), nrows=4, sharex=True,
+            height_ratios=[0.1,1,1,1])
+    ax1, ax2, ax3, ax4 = axes
+    draw_band_limit_strip(ax1, fc, use_long=True)
+    draw_phase_rms_long(ax2, fc)
+    draw_wind_speed_long(ax3, fc)
+    draw_summary_cloud_series_long(ax4, fc)
+    add_band_limit_legend(ax2)
+    for ax in axes:
+        ax.label_outer()
+    when = fc.forecast_time
+    ax4.set_xlim(
+            when+pd.Timedelta("-3h"),
+            when+pd.Timedelta("75h"),
+    )
+    savefig(outname, t_forecast=when, h_pad=0.15)
+
+
 def plot_all_weather(fc):
     plot_phase_rms_forecast(fc)
+    plot_phase_rms_forecast_long(fc)
     plot_phase_rms_past(fc)
     plot_wind_speed(fc)
     plot_wind_direction(fc)
+    plot_wind_speed_long(fc)
     plot_temperature(fc)
     plot_pressure(fc)
     plot_direct_radiation(fc)
@@ -871,6 +1021,7 @@ def plot_all_weather(fc):
     plot_boundary_layer_height(fc)
     plot_cloud_cover_point(fc)
     plot_operator_summary(fc)
+    plot_operator_summary_long(fc)
     for hq in fc.herbie_queries.values():
         if not hq.okay:
             logger.warn(f"Skipping plots for: {hq.query_type}")

@@ -28,6 +28,8 @@ def predict_model(model, series, future, n=48) -> DataFrame:
     # function. The issue seems to be in not using an inclusive
     # slice for this index type for `covariate_matrices`, between
     # a `pd.DatetimeIndex` and `pd.RangeIndex`.
+    if n < 1:
+        raise ValueError(f"Invalid number of forecast steps: {n=}")
     if model.name == "no_weather":
         series._has_datetime_index = False
     prediction = model.predict(
@@ -50,20 +52,22 @@ class ModelPhaseForecast(QueryBase):
             (False, False): "seasonal",
     }
 
-    def __init__(self, w_query, p_query):
+    def __init__(self, w_query, p_query, use_phase=True, n=48):
         # FIXME Should fill NaNs in the measured phase data.
         w_ts = w_query.to_model_series()
         p_ts = p_query.to_model_series()
-        if p_ts is None:
+        if p_ts is None or not use_phase:
             when = w_query.forecast_time.tz_localize(None)
             p_ts, _ = w_ts["hour"].split_before(when)
             p_ts._components = pd.Index(["phase_rms"])
             p_ts._time_index.name = "time"
             p_ts._time_dim = "time"
-        which_okay = (w_query.okay, p_query.okay_for_model)
+        w_okay = w_query.okay
+        p_okay = p_query.okay_for_model and use_phase
+        which_okay = (w_okay, p_okay)
         model = get_model(self.model_types[which_okay])
         try:
-            self.df = predict_model(model, p_ts, w_ts)
+            self.df = predict_model(model, p_ts, w_ts, n=n)
         except:
             logger.exception("Error predicting phase RMS from model.")
             self.df = None
@@ -85,6 +89,18 @@ class ModelPhaseForecast(QueryBase):
     def save_data(self, outname: Union[Path, str]="predicted_phase") -> None:
         if not self.okay:
             logger.warn("Could not save data for model phase forecast.")
+            return
+        outpath = self.forecast_dir / Path(outname)
+        to_parquet(self.df, outpath)
+
+
+class LongModelPhaseForecast(ModelPhaseForecast):
+    def __init__(self, w_query, p_query, n=288):
+        super().__init__(w_query, p_query, use_phase=False, n=n)
+
+    def save_data(self, outname: Union[Path, str]="predicted_phase_long") -> None:
+        if not self.okay:
+            logger.warn("Could not save data for long model phase forecast.")
             return
         outpath = self.forecast_dir / Path(outname)
         to_parquet(self.df, outpath)

@@ -18,7 +18,7 @@ from . import (
         _now_dir,
 )
 from .plotting import plot_all_weather
-from .predict_phase import ModelPhaseForecast
+from .predict_phase import (ModelPhaseForecast, LongModelPhaseForecast)
 from .query.herbie_maps import HerbieQuery
 from .query.monitor import (ApiQuery, WeatherStationQuery)
 from .query.ndfd import NdfdQuery
@@ -55,6 +55,7 @@ class Forecast:
         self.station = WeatherStationQuery()
         self.ndfd    = NdfdQuery()
         self.predict = ModelPhaseForecast(self.weather, self.phase)
+        self.predict_long = LongModelPhaseForecast(self.weather, self.phase)
         self.herbie_queries = {
                 q: HerbieQuery(query_type=q)
                 for q in ("veril", "tcolw", "mcc")
@@ -81,6 +82,7 @@ class Forecast:
                 self.station,
                 self.ndfd,
                 self.predict,
+                self.predict_long,
         ]
         queries.extend(self.herbie_queries.values())
         for query in queries:
@@ -115,7 +117,7 @@ class Forecast:
             f.write(f"# Phase model: {self.predict.model.name}\n")
             df.to_csv(f, sep="\t")
 
-    def get_previous_phase_forecasts(self, n_forecasts=12):
+    def get_previous_phase_forecasts(self, filen="predicted_phase", n_forecasts=12):
         steps = np.arange(-n_forecasts, 0)
         deltas = pd.to_timedelta(steps, unit="hr")
         timestamps = self.forecast_time + deltas
@@ -123,7 +125,7 @@ class Forecast:
         for ts in timestamps:
             date = ts.date().isoformat().replace("-", "/")
             hour = f"{ts.hour:02d}"
-            path = self.forecast_root / date / hour / "predicted_phase.parquet"
+            path = self.forecast_root / date / hour / f"{filen}.parquet"
             try:
                 df = pd.read_parquet(path)
                 df.attrs["offset"] = ts

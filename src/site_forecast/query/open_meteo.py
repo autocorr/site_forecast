@@ -112,7 +112,7 @@ def parse_response(response):
 
 
 def request_data(
-        n_days=2,
+        n_days=5,
         lat: Union[Latitude, Real]=SITE_LAT,
         lon: Union[Longitude, Real]=SITE_LON,
     ):
