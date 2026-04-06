@@ -78,8 +78,7 @@ class MonitorConnection:
                 user=None,
                 password=None,
                 dbname=None,
-                #timeout_length=15,
-                timeout_length=60,
+                timeout_length=60*3,
         ):
         if timeout_length <= 0:
             raise ValueError(f"Timeout duration must be greater than zero: {timeout_length}")

@@ -22,7 +22,7 @@ from .predict_phase import (ModelPhaseForecast, LongModelPhaseForecast)
 from .query.herbie_maps import HerbieQuery
 from .query.monitor import (ApiQuery, WeatherStationQuery)
 from .query.ndfd import NdfdQuery
-from .query.open_meteo import OpenMeteoQuery
+from .query.open_meteo import (OpenMeteoVlaQuery, OpenMeteoMultiSiteQuery)
 
 
 OUT_COLS = [
@@ -50,11 +50,12 @@ OUT_COLS = [
 class Forecast:
     def __init__(self):
         self.forecast_time = pd.Timestamp.now(tz="utc")
-        self.weather = OpenMeteoQuery()
-        self.phase   = ApiQuery()
-        self.station = WeatherStationQuery()
-        self.ndfd    = NdfdQuery()
-        self.predict = ModelPhaseForecast(self.weather, self.phase)
+        self.weather    = OpenMeteoVlaQuery()
+        self.weather_ms = OpenMeteoMultiSiteQuery()
+        self.phase      = ApiQuery()
+        self.station    = WeatherStationQuery()
+        self.ndfd       = NdfdQuery()
+        self.predict    = ModelPhaseForecast(self.weather, self.phase)
         self.predict_long = LongModelPhaseForecast(self.weather, self.phase)
         self.herbie_queries = {
                 q: HerbieQuery(query_type=q)
@@ -78,6 +79,7 @@ class Forecast:
     def save_data(self):
         queries = [
                 self.weather,
+                self.weather_ms,
                 self.phase,
                 self.station,
                 self.ndfd,
