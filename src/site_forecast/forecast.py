@@ -17,7 +17,7 @@ from . import (
         logger,
         _now_dir,
 )
-from .plotting import plot_all_weather
+from .plotting.plot_mpl import plot_all_weather
 from .predict_phase import (ModelPhaseForecast, LongModelPhaseForecast)
 from .query.herbie_maps import HerbieQuery
 from .query.monitor import (ApiQuery, WeatherStationQuery)

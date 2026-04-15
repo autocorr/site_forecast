@@ -150,6 +150,7 @@ def request_data(
         sites: List[Station]=[VLA_SITE],
         hourly_columns: List[str]=COLUMNS_VLA_HR,
         minutely_columns: List[str]=COLUMNS_VLA_15,
+        n_past_days: int=1,
     ):
     if n_days > 16:
         raise ValueError("Forecast days must be 16 days or fewer.")
@@ -163,7 +164,7 @@ def request_data(
             "minutely_15": minutely_columns,
             "models": "gfs_seamless",
             "forecast_days": n_days,
-            "past_days": 1,
+            "past_days": n_past_days,
     }
     openmeteo = openmeteo_requests.Client(session=RETRY_SESSION)
     responses = openmeteo.weather_api(URL, params=params)
@@ -284,7 +285,9 @@ class OpenMeteoMultiSiteQuery(OpenMeteoQuery):
             Additional keyword arguments are passed to the ``request_data`` function.
         """
         super().__init__(
-                n_days=3,
+                n_days=5,
+                n_past_days=0,
+                sites=SITES,
                 hourly_columns=COLUMNS_MULTI_HR,
                 minutely_columns=None,
                 **kwargs

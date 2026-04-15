@@ -16,12 +16,8 @@ from matplotlib import (patches, patheffects)
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 from matplotlib.ticker import AutoMinorLocator, ScalarFormatter
 
-from astropy.time import Time
-from astropy.coordinates import get_sun, AltAz, EarthLocation
+from .. import (CONFIG, KMHOUR_TO_MS, TPW_TO_PWV, SITES_BY_NAME, logger, _now_dir)
 
-from . import (CONFIG, KMHOUR_TO_MS, TPW_TO_PWV, logger, _now_dir)
-
-VLA_SITE = EarthLocation.of_site("VLA")
 CMAP = plt.get_cmap("magma")
 CMAP.set_bad("0.85")
 BAND_CMAP = ListedColormap(
@@ -200,27 +196,8 @@ def add_wind_limits(ax) -> plt.Axes:
     return ax
 
 
-def add_night(ax, t_forecast, delta="1d"):
-    # TODO Can speed up this portion of code by interpolating the altitudes
-    # without having to directly calculate them over short (e.g., ~1 min)
-    # intervals.
-    dt = pd.Timedelta(delta)
-    time = Time(pd.date_range(t_forecast-dt, t_forecast+dt, freq="10min"))
-    altaz = AltAz(obstime=time, location=VLA_SITE)
-    sun_altaz = get_sun(time).transform_to(altaz)
-    sun_up = [co.alt.value > 0 for co in sun_altaz]
-    rises, sets = [], []
-    if not sun_up[0]:
-        sets.append(time[0])
-    last = sun_up[0]
-    for t, up in zip(time[:-1], sun_up[:-1]):
-        if not last and up:
-            rises.append(t)
-        if last and not up:
-            sets.append(t)
-        last = up
-    if not sun_up[-1]:
-        sets.append(time[-1])
+def add_night(ax, t_forecast, delta="1d", station=SITES_BY_NAME["Y1"]):
+    rises, sets = station.sun_rise_and_sets(t_forecast, delta=delta)
     for t_rise, t_set in zip(rises, sets):
         ax.axvspan(t_rise.to_datetime(), t_set.to_datetime(), color="0.85", zorder=-3)
 

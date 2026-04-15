@@ -188,6 +188,7 @@ class MonitorPointDbQuery(QueryBase):
     lookback = 0.8  # ~19.2 hour
     min_lag = pd.Timedelta("1h")
     min_span = pd.Timedelta("12h")
+    timeout_length = 3 * 60  # sec
 
     def __init__(self, mjd_start=None, mjd_end=None):
         if mjd_end is None:
@@ -229,7 +230,7 @@ class ApiQuery(MonitorPointDbQuery):
     def __init__(self, mjd_start=None, mjd_end=None, **kwargs):
         super().__init__(mjd_start=mjd_start, mjd_end=mjd_end)
         try:
-            df = MonitorConnection().query_phases(
+            df = MonitorConnection(timeout_length=self.timeout_length).query_phases(
                     mjd_start=self.mjd_start,
                     mjd_end=self.mjd_end,
                     **kwargs
@@ -264,7 +265,7 @@ class WeatherStationQuery(MonitorPointDbQuery):
     def __init__(self, mjd_start=None, mjd_end=None, **kwargs):
         super().__init__(mjd_start=mjd_start, mjd_end=mjd_end)
         try:
-            self.df = MonitorConnection().query_weather(
+            self.df = MonitorConnection(timeout_length=self.timeout_length).query_weather(
                     mjd_start=self.mjd_start,
                     mjd_end=self.mjd_end,
                     **kwargs
