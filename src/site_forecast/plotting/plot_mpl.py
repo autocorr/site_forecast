@@ -4,6 +4,7 @@
 # - resolved cloud cover
 # - effective sensitivity
 
+import colorsys
 import warnings
 from pathlib import Path
 from datetime import datetime
@@ -96,6 +97,20 @@ def colormap_from_herbie_query(hq, cmap_name="magma", split_cmap_name="gray_r"):
     return norm, cmap
 
 
+def scale_color_by_luminosity(color: str, scale_factor=0.5):
+    """
+    Scale the given color by multiplying scaling it by (1 - luminosity). Input can
+    be a matplotlib color string, hex string, or RGB tuple.
+    """
+    try:
+        hex_s = plt.cm.colors.cnames[color]
+    except:
+        hex_s = color
+    rgb = plt.cm.colors.to_rgb(hex_s)
+    hue, lum, sat = colorsys.rgb_to_hls(*rgb)
+    return colorsys.hls_to_rgb(hue, 1 - scale_factor * (1 - lum), sat)
+
+
 def savefig(outname, t_forecast=None, dpi=300, h_pad=0.3, w_pad=None, overwrite=True):
     now_dir = _now_dir(t_forecast)
     out_dir = Path(CONFIG.get("Paths", "plots", fallback="./plots")).expanduser() / now_dir
@@ -105,7 +120,7 @@ def savefig(outname, t_forecast=None, dpi=300, h_pad=0.3, w_pad=None, overwrite=
     if path.exists() and not overwrite:
         logger.info(f"Figure exists, continuing: {path}")
     else:
-        for ext in ("pdf", "png"):
+        for ext in ("pdf", "png", "svgz"):
             filen = str(path) + f".{ext}"
             plt.savefig(filen, dpi=dpi)
         print_path = Path(*path.parts[-6:])
@@ -822,15 +837,19 @@ def plot_herbie_quantile_waterfall(hq, outstem="waterfall") -> None:
 
 
 def draw_summary_cloud_series(ax, fc) -> plt.Axes:
-    colors = {"mcc": "0.3", "tcolw": "dodgerblue", "veril": "firebrick"}
-    for label, hq in fc.herbie_queries.items():
+    colors = {"mcc": "gray", "tcolw": "dodgerblue", "veril": "firebrick"}
+    for label, hq in reversed(fc.herbie_queries.items()):
         if not hq.okay:
             logger.warn(f"Skipping plot summary panel '{label}'")
             continue
         ds = hq.ds
         s_ds = ds.sel(radius=10.0)
-        ax.plot(s_ds.date, s_ds[f"{hq.query_type}_c"], color=colors[label],
-                drawstyle="steps-mid", label=label.upper())
+        vals = s_ds[f"{hq.query_type}_c"].values
+        line_color = colors[label]
+        shading_color = scale_color_by_luminosity(line_color, scale_factor=0.35)
+        ax.fill_between(s_ds.date, np.zeros_like(vals), vals, step="mid",
+                hatch="/", edgecolor=line_color, facecolor=shading_color,
+                linewidth=1.5, label=label.upper())
     style_single_panel_plot(ax, fc)
     ax.set_ylim(-0.05, 1.05)
     ax.set_ylabel(f"Cloud Coverage")

@@ -26,9 +26,14 @@ from ..train import to_training_subset
 
 CACHE_SESSION = requests_cache.CachedSession(".cache", expire_after=3600)
 RETRY_SESSION = retry(CACHE_SESSION, retries=5, backoff_factor=0.2)
-URL = "https://api.open-meteo.com/v1/forecast"
+API_URL = "https://api.open-meteo.com/v1/forecast"
 VLA_SITE = SITES_BY_NAME["Y1"]
 
+PRESSURE_LEVELS = [
+        1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 675,
+        650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 350, 325,
+        300, 275, 250, 225, 200, 175, 150, 125, 100, 70, 50, 40, 30, 20, 15, 10,
+]
 
 COLUMNS_VLA_HR = [
         # Quantities used in phase forecast
@@ -167,7 +172,7 @@ def request_data(
             "past_days": n_past_days,
     }
     openmeteo = openmeteo_requests.Client(session=RETRY_SESSION)
-    responses = openmeteo.weather_api(URL, params=params)
+    responses = openmeteo.weather_api(API_URL, params=params)
     df = parse_response(
             responses,
             names,
@@ -176,6 +181,26 @@ def request_data(
     )
     logger.info(f"Weather: (N={df.shape[0]}, has_bad={df.attrs['has_bad']})")
     return df
+
+
+def unpivot_pressure_levels(
+            df: pd.DataFrame,
+            pressure_columns: List[str],
+    ) -> pd.DataFrame:
+    keep_cols = ["date"] + [c for c in df.columns if "hPa" in c]
+    p_df = pd.wide_to_long(
+            df.reset_index()[keep_cols],
+            stubnames=pressure_columns,
+            i=["date"],
+            j="pressure",
+            sep="_",
+            suffix=r"\d+hPa",
+    )
+    pressures = pd.to_numeric(
+            p_df.index.get_level_values("pressure").str.replace("hPa", "")
+    ).unique().sort_values()  # ascending 10 -> 825 hPa
+    p_df.index = p_df.index.set_levels(pressures, level="pressure")
+    return p_df.sort_index()
 
 
 class OpenMeteoQuery(QueryBase):
@@ -227,7 +252,7 @@ class OpenMeteoVlaQuery(OpenMeteoQuery):
 
     def __init__(self, **kwargs):
         """
-        Query the open-meteo API for HRRR forecast values at a site location.
+        Query the open-meteo API for HRRR forecast values at the VLA site.
         This class is tailored to the parameters used for the VLA phase RMS
         model.  If open-meteo cannot be reached, then minimal data products are
         constructed using day of year and hour of day on a 15-minutely time
@@ -266,6 +291,41 @@ class OpenMeteoVlaQuery(OpenMeteoQuery):
                     index=dates,
             )
             return timeseries_from_dataframe(df, freq=self.freq)
+
+
+class OpenMeteoVlaPressureQuery(OpenMeteoQuery):
+    delta = pd.Timedelta("12.5h")
+    freq = "1h"
+    query_type = "open-meteo pressure"
+    outname = "weather_pr"
+    pressure_columns = ["temperature", "relative_humidity"]
+    hourly_columns = [
+            f"{column}_{level}hPa"
+            for column in pressure_columns
+            for level in PRESSURE_LEVELS if level <= 825
+    ]
+
+    def __init__(self, **kwargs):
+        """
+        Query the open-meteo API for GFS/HRRR forecast values for pressure
+        level quantities at the VLA site.
+
+        Parameters
+        ----------
+        kwargs :
+            Additional keyword arguments are passed to the ``request_data`` function.
+        """
+        super().__init__(
+                n_days=5,
+                n_past_days=0,
+                hourly_columns=self.hourly_columns,
+                minutely_columns=None,
+                **kwargs
+        )
+        self.df = unpivot_pressure_levels(
+                self.df,
+                self.pressure_columns,
+        )
 
 
 class OpenMeteoMultiSiteQuery(OpenMeteoQuery):

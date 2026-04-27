@@ -43,6 +43,7 @@ def get_multi_site_stack_layout(
             f"yaxis{i}": {
                 "domain": [(i-1)/n_rows, i/n_rows-v_delta],
                 "range": [ymin, ymax],
+                "hoverformat": ".3r",
             }
             for i in range(1, n_rows+1)
     }
@@ -53,6 +54,7 @@ def get_multi_site_stack_layout(
             showlegend=True,
             hoversubplots="axis",
             hovermode="x unified",
+            margin=dict(b=20, l=20, r=20, t=20),
             font=dict(size=14),
             xaxis=dict(
                 range=[xmin, xmax],
@@ -82,33 +84,6 @@ def get_two_stack_agg_layout(**kwargs):
     return layout
 
 
-class PlotlyFigureBase:
-    def __init__(self, data, limits=None, t_forecast=None):
-        if limits is None:
-            limits = (None, None, None, None)
-        self.data = data
-        self.limits = limits
-        self.t_forecast = t_forecast
-        self.layout = None
-
-    def save(self, outname, **kwargs):
-        fig = go.Figure(data=self.data, layout=self.layout)
-        savefig(fig, outname, t_forecast=self.t_forecast, **kwargs)
-        return fig
-
-
-class PlotlyFigureVlbaStack(PlotlyFigureBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.layout = get_multi_site_stack_layout(n_rows=10, limits=self.limits)
-
-
-class PlotlyFigureVlbaAgg(PlotlyFigureBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.layout = get_two_stack_agg_layout(limits=self.limits)
-
-
 def get_now_trace(x, y_lim, yaxis=None):
     return go.Scatter(
             x=[x, x],
@@ -117,6 +92,20 @@ def get_now_trace(x, y_lim, yaxis=None):
             line_width=1.5,
             line_dash="dash",
             line_color="magenta",
+            showlegend=False,
+            hoverinfo="skip",
+            yaxis=yaxis,
+    )
+
+
+def get_freezing_trace(xmin, xmax, yaxis=None):
+    return go.Scatter(
+            x=[xmin, xmax],
+            y=[0, 0],
+            mode="lines",
+            line_width=1.5,
+            line_dash="dash",
+            line_color="mediumblue",
             showlegend=False,
             hoverinfo="skip",
             yaxis=yaxis,
@@ -143,13 +132,14 @@ def get_wind_limit_graph_objects(xmin, xmax, yaxis=None, vlba=True):
                 line_dash="dot",
                 line_color=color,
                 showlegend=False,
+                hoverinfo="skip",
                 yaxis=yaxis,
         )
         graph_objects.append(scatter)
     return graph_objects
 
 
-def get_annotation_trace(x, y, text, yaxis=None, x_offset=pd.Timedelta("1h")):
+def get_annotation_trace(x, y, text, yaxis=None, x_offset=pd.Timedelta("1.5h")):
     return go.Scatter(
             x=[x+x_offset],
             y=[y],
@@ -158,12 +148,18 @@ def get_annotation_trace(x, y, text, yaxis=None, x_offset=pd.Timedelta("1h")):
             textposition="top center",
             yaxis=yaxis,
             showlegend=False,
+            hoverinfo="skip",
     )
 
 
 def get_sun_rise_set_by_site(times, station, t_offset=pd.Timedelta("1d")):
-    t_center = times.mean()
-    t_delta = (times.max() - t_center) + t_offset
+    match times:
+        case (t_min, t_max) if isinstance(times, tuple):
+            t_center = (t_max - t_min) / 2 + t_min
+            t_delta  = (t_max - t_min) / 2 + t_offset
+        case _:
+            t_center = times.mean()
+            t_delta  = (times.max() - t_center) + t_offset
     return station.sun_rise_and_sets(t_center, delta=t_delta)
 
 
@@ -190,171 +186,246 @@ def get_sun_rise_set_patches(rises, sets, y_lim, yaxis="y1", opacity=0.2):
     )
 
 
-class VlbaPlotter:
-    sites = VLBA_SITES
-    site_names = VLBA_SITE_NAMES
-    n_sites = len(VLBA_SITE_NAMES)
+class PlotlyFigureBase:
+    n_rows = 1
+    x_offset_lo = pd.Timedelta("12h")
+    x_offset_hi = pd.Timedelta("4.5d")
 
-    def __init__(self, fc):
-        self.fc = fc
-        self.df = self.fc.weather_ms.df
-        self.times = self.df.index.get_level_values("date")
-        self.xmin = self.times.min()
-        self.xmax = self.times.max()
-        self.sun_rise_sets_by_site = {
-                site.name: get_sun_rise_set_by_site(self.times, site)
-                for site in self.sites
-        }
-
-    @property
-    def t_forecast(self):
-        return self.fc.forecast_time
-
-    @property
-    def okay(self):
-        return self.fc.weather_ms.okay
-
-    def now_line_trace(self, y_lim, yaxis: str="y1"):
-        return get_now_trace(self.t_forecast, y_lim, yaxis)
-
-    def now_line_traces_for_stack(self, y_lim):
-        traces = []
-        for i, _ in enumerate(self.site_names):
-            traces.append(self.now_line_trace(y_lim, yaxis=f"y{i+1}"))
-        return traces
-
-    def now_line_traces_for_agg(self, y_lim):
-        return [
-                self.now_line_trace(y_lim, yaxis="y1"),
-                self.now_line_trace(y_lim, yaxis="y2"),
-        ]
-
-    def wind_limit_traces(self, yaxis: str="y1"):
-        return get_wind_limit_graph_objects(self.xmin, self.xmax, yaxis)
-
-    def wind_limit_traces_for_stack(self):
-        traces = []
-        for i, _ in enumerate(self.site_names):
-            traces.extend(self.wind_limit_traces(yaxis=f"y{i+1}"))
-        return traces
-
-    def wind_limit_traces_for_agg(self):
-        return [
-                *self.wind_limit_traces(yaxis="y1"),
-                *self.wind_limit_traces(yaxis="y2"),
-        ]
-
-    def site_name_annotations_for_stack(self, y, **kwargs):
-        return [
-                get_annotation_trace(self.xmin, y, name, yaxis=f"y{i+1}", **kwargs)
-                for i, name in enumerate(self.site_names)
-        ]
-
-    def sun_rise_set_for_stack(self, y_lim, opacity=0.2):
-        traces = []
-        for i, (rises, sets) in enumerate(self.sun_rise_sets_by_site.values()):
-            traces.append(get_sun_rise_set_patches(rises, sets, y_lim, yaxis=f"y{i+1}", opacity=opacity))
-        return traces
-
-    def sun_rise_set_for_agg(self, y_lim, opacity=0.075):
-        traces = []
-        for rises, sets in self.sun_rise_sets_by_site.values():
-            traces.append(get_sun_rise_set_patches(rises, sets, y_lim, yaxis="y1", opacity=opacity))
-            traces.append(get_sun_rise_set_patches(rises, sets, y_lim, yaxis="y2", opacity=opacity))
-        return traces
-
-    def value_traces(self, col_name, yaxis=None):
-        if "wind_speed" in col_name:
-            scale_factor = KMHOUR_TO_MS
+    def __init__(self, series, x_lim=None, y_lim=None, label=None, t_forecast=None):
+        if x_lim is not None:
+            self.x_lim = x_lim
+        elif t_forecast is not None:
+            self.x_lim = (t_forecast - self.x_offset_lo, t_forecast + self.x_offset_hi)
         else:
-            scale_factor = 1
-        traces = []
+            times = series.index.get_level_values("date")
+            self.x_lim = (times.min(), times.max())
+        if y_lim is not None:
+            self.y_lim = y_lim
+        else:
+            self.y_lim = (series.min(), series.max())
+        self.series = series
+        self.label = series.name if label is None else label
+        self.data = []
+        self.t_forecast = t_forecast
+        self.layout = None
+
+    @property
+    def xmin(self):
+        return self.x_lim[0]
+
+    @property
+    def xmax(self):
+        return self.x_lim[1]
+
+    @property
+    def ymin(self):
+        return self.y_lim[0]
+
+    @property
+    def ymax(self):
+        return self.y_lim[1]
+
+    @property
+    def limits(self):
+        return (*self.x_lim, *self.y_lim)
+
+    @property
+    def is_wind_speed(self):
+        return "wind_speed" in self.series.name
+
+    @property
+    def is_temperature(self):
+        return "temperature" in self.series.name
+
+    @property
+    def scale_factor(self):
+        if self.is_wind_speed:
+            return KMHOUR_TO_MS
+        else:
+            return 1
+
+    def add_now_line(self) -> None:
+        self.data.extend([
+                get_now_trace(self.t_forecast, self.y_lim, f"y{i}")
+                for i in range(1, self.n_rows+1)
+        ])
+
+    def add_freezing_line(self) -> None:
+        for i in range(1, self.n_rows+1):
+            self.data.append(get_freezing_trace(*self.x_lim, f"y{i}"))
+
+    def add_wind_limits(self) -> None:
+        for i in range(1, self.n_rows+1):
+            self.data.extend(get_wind_limit_graph_objects(*self.x_lim, f"y{i}"))
+
+    def add_value_traces(self, yaxis=None) -> None:
         for i, site in enumerate(self.sites):
-            s_df = self.df.xs(site.name, level="site")
-            traces.append(go.Scatter(
-                    x=s_df.index,
-                    y=s_df[col_name] * scale_factor,
+            ser = self.series.xs(site.name, level="site")
+            self.data.append(go.Scatter(
+                    x=ser.index,
+                    y=ser * self.scale_factor,
                     name=site.name,
                     line=dict(color=COLORS[i]),
                     mode="lines",
                     yaxis=f"y{i+1}" if yaxis is None else yaxis,
+                    legendgroup="value",
             ))
-        return traces
 
-    def quantile_traces(self, col_name, yaxis=None):
-        if "wind_speed" in col_name:
-            scale_factor = KMHOUR_TO_MS
-        else:
-            scale_factor = 1
-        antenna_counts = (3, 4, 5, 6, 7, 9, 10, 8)
-        traces = []
+    def add_quantile_traces(
+            self,
+            yaxis=None,
+            antenna_counts=(3, 4, 5, 6, 7, 8, 9, 10),
+            highlight_antenna=8,
+            max_count=10,
+        ) -> None:
         for n_s in antenna_counts:
-            q = n_s / 10
-            s_df = (
-                    self.df[self.df.index.get_level_values("site").isin(self.site_names)]
+            q = n_s / max_count
+            ser = (
+                    self.series[self.series.index.get_level_values("site").isin(self.site_names)]
                     .groupby(level="date")
                     .quantile(min(q, 1.0))
             )
-            if n_s == 8:
+            if n_s == highlight_antenna:
                 line = dict(color="mediumblue", width=4.0)
                 marker = dict(size=8)
             else:
                 line = dict(color="black", width=1.75)
                 marker = dict(size=0.1)
-            traces.append(go.Scatter(
-                    x=s_df.index,
-                    y=s_df.wind_speed_10m * scale_factor,
+            self.data.append(go.Scatter(
+                    x=ser.index,
+                    y=ser * self.scale_factor,
                     name=f"{q:.1f}",
                     line=line,
                     marker=marker,
                     mode="lines",
                     yaxis=yaxis,
                     showlegend=False,
+                    legendgroup="quantile",
             ))
-        return traces
 
-    def figure_stack(self, ymin, ymax, annotation_offset_scale=0.82):
-        data = [
-                *self.sun_rise_set_for_stack((ymin, ymax)),
-                *self.now_line_traces_for_stack((ymin, ymax)),
-                *self.site_name_annotations_for_stack(ymax*annotation_offset_scale),
-        ]
-        limits = (self.xmin, self.xmax, ymin, ymax)
-        return PlotlyFigureVlbaStack(data, limits=limits, t_forecast=self.t_forecast)
-
-    def figure_agg(self, ymin, ymax):
-        data = [
-                *self.sun_rise_set_for_agg((ymin, ymax)),
-                *self.now_line_traces_for_agg((ymin, ymax)),
-        ]
-        limits = (self.xmin, self.xmax, ymin, ymax)
-        return PlotlyFigureVlbaAgg(data, limits=limits, t_forecast=self.t_forecast)
-
-    def plot_stack(self, col_name, ymin, ymax, outname=None):
-        if outname is None:
-            outname = f"{col_name}_ms_stack"
-        fig = self.figure_stack(ymin, ymax)
-        if "wind_speed" in col_name:
-            fig.data.extend(self.wind_limit_traces_for_stack())
-        fig.data.extend(self.value_traces(col_name))
-        fig.save(outname=outname)
+    def save(self, outname, **kwargs):
+        fig = go.Figure(data=self.data, layout=self.layout)
+        savefig(fig, outname, t_forecast=self.t_forecast, **kwargs)
         return fig
 
-    def plot_agg(self, col_name, ymin, ymax, outname=None):
-        if outname is None:
-            outname = f"{col_name}_ms_agg"
-        fig = self.figure_agg(ymin, ymax)
-        if "wind_speed" in col_name:
-            fig.data.extend(self.wind_limit_traces_for_agg())
-        fig.data.extend([
-            *self.value_traces(col_name, yaxis="y1"),
-            *self.quantile_traces(col_name, yaxis="y2"),
-        ])
-        fig.save(outname=outname)
-        return fig
 
-    def plot_wind_speed(self, ymin=0, ymax=30) -> None:
-        col_name = "wind_speed_10m"
-        self.plot_stack(col_name, ymin, ymax, outname="wind_speed_ms_stack")
-        self.plot_agg(  col_name, ymin, ymax, outname="wind_speed_ms_agg")
+class PlotlyFigureVlbaBase(PlotlyFigureBase):
+    sites = VLBA_SITES
+    site_names = VLBA_SITE_NAMES
+    n_sites = len(VLBA_SITE_NAMES)
+
+    def __init__(self, *args, sun_rise_sets=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if sun_rise_sets is None:
+            self.sun_rise_sets_by_site = {
+                    site.name: get_sun_rise_set_by_site((self.xmin, self.xmax), site)
+                    for site in self.sites
+            }
+        else:
+            self.sun_rise_sets_by_site = sun_rise_sets
+
+
+class PlotlyFigureVlbaStack(PlotlyFigureVlbaBase):
+    n_rows = 10
+    suffix = "stack"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.layout = get_multi_site_stack_layout(n_rows=self.n_rows, limits=self.limits)
+
+    def add_site_name_annotations(self, annotation_offset_scale=0.75):
+        for i, name in enumerate(VLBA_SITE_NAMES):
+            trace = get_annotation_trace(
+                    self.xmin,
+                    self.ymax*annotation_offset_scale,
+                    name,
+                    yaxis=f"y{i+1}",
+            )
+            self.data.append(trace)
+
+    def add_sun_rise_set(self, opacity=0.2):
+        for i, name in enumerate(self.site_names):
+            rises, sets = self.sun_rise_sets_by_site[name]
+            patches = get_sun_rise_set_patches(rises, sets, self.y_lim, yaxis=f"y{i+1}", opacity=opacity)
+            self.data.append(patches)
+
+    def add_traces(self):
+        self.add_sun_rise_set()
+        if self.is_wind_speed:
+            self.add_wind_limits()
+        elif self.is_temperature:
+            self.add_freezing_line()
+        self.add_now_line()
+        self.add_value_traces()
+        self.add_site_name_annotations()
+
+
+class PlotlyFigureVlbaAgg(PlotlyFigureVlbaBase):
+    n_rows = 2
+    suffix = "agg"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.layout = get_two_stack_agg_layout(limits=self.limits)
+
+    def add_sun_rise_set(self, opacity=0.075):
+        for name in self.site_names:
+            rises, sets = self.sun_rise_sets_by_site[name]
+            for i in (1, 2):
+                patches = get_sun_rise_set_patches(rises, sets, self.y_lim, yaxis=f"y{i}", opacity=opacity)
+                self.data.append(patches)
+
+    def add_traces(self):
+        self.add_sun_rise_set()
+        if self.is_wind_speed:
+            self.add_wind_limits()
+        elif self.is_temperature:
+            self.add_freezing_line()
+        self.add_now_line()
+        self.add_value_traces(yaxis="y1")
+        self.add_quantile_traces(yaxis="y2")
+
+
+def plot_vlba_multisite(fc, prefix=None):
+    if not fc.weather_ms.okay:
+        logger.warn("Skipping multi-site VLBA plots")
+        return
+    df = fc.weather_ms.df.copy()
+    times = df.index.get_level_values("date").unique()
+    df["temp_dewpoint_diff"] = df.temperature_2m - df.dew_point_2m
+    df["cloud_cover_midlow"] = df[["cloud_cover_mid", "cloud_cover_low"]].max(axis=1)
+    items = (
+            ("wind_speed_10m", "wind_speed", (0, 30)),
+            ("total_column_integrated_water_vapour", "pwv", (0, 40)),
+            ("precipitation", "precip", (0, 5)),
+            ("precipitation_probability", "precip_prob", (0, 102)),
+            ("temperature_2m", "temperature", (-25, 45)),
+            ("temp_dewpoint_diff", "temp_dewp_diff", (-5, 50)),
+            ("boundary_layer_height", "pbl_height", (0, 5)),
+            ("cloud_cover_midlow", "cloud_cover", (0, 102)),
+    )
+    sun_rise_sets = {
+            site.name: get_sun_rise_set_by_site((times.min(), times.max()), site)
+            for site in VLBA_SITES
+    }
+    for col, label, y_lim in items:
+        try:
+            series = df[col]
+            if col == "boundary_layer_height":
+                series = series / 1e3  # m to km
+            for cls in (PlotlyFigureVlbaStack, PlotlyFigureVlbaAgg):
+                fig = cls(
+                        series,
+                        y_lim=y_lim,
+                        t_forecast=fc.forecast_time,
+                        sun_rise_sets=sun_rise_sets,
+                )
+                fig.add_traces()
+                outname = f"{label}_ms_{fig.suffix}"
+                if prefix is not None:
+                    fig.save(f"{prefix}_{outname}")
+                else:
+                    fig.save(outname)
+        except:
+            logger.exception(f"Unhandled exception for {col}")
 

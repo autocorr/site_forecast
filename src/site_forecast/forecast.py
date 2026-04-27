@@ -18,6 +18,7 @@ from . import (
         _now_dir,
 )
 from .plotting.plot_mpl import plot_all_weather
+from .plotting.plot_plotly import plot_vlba_multisite
 from .predict_phase import (ModelPhaseForecast, LongModelPhaseForecast)
 from .query.herbie_maps import HerbieQuery
 from .query.monitor import (ApiQuery, WeatherStationQuery)
@@ -139,6 +140,7 @@ class Forecast:
 
     def plot_all(self) -> None:
         plot_all_weather(self)
+        plot_vlba_multisite(self)
 
     def link_latest(self) -> None:
         plot_root = Path(CONFIG.get("Paths", "plots", fallback="./plots")).expanduser()
