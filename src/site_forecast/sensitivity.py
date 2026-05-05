@@ -4,6 +4,7 @@ if TYPE_CHECKING:
     from .query.open_meteo import OpenMeteoVlaQuery, OpenMeteoVlaPressureQuery
     from .query.herbie_maps import HerbieQuery
 
+import multiprocessing
 from numbers import Real
 from pathlib import Path
 
@@ -26,9 +27,6 @@ OUTPUT_COLUMNS = [
 ]
 
 # TODO
-# - Seasonal sensitivity estimate given profiles of PWV and surface
-#   pressure for the VLA. Select midlatitude summer/winter climatology
-#   based on the forecast time.
 # - Interpolate hourly data to sub-hourly for 15-min cloud TCOLW/TCOLI.
 # - Predict range of sensitivities from the ensemble IFS PWV forecast.
 
@@ -278,6 +276,33 @@ class VlaSeasonalPredictor:
         return model.run().set_index("frequency")
 
 
+def _run_one(
+    time: pd.Timestamp,
+    surf_df: pd.DataFrame,
+    pres_df: pd.DataFrame,
+    freq_min: u.Quantity,
+    freq_max: u.Quantity,
+    freq_step: u.Quantity,
+    band_frequencies: dict,
+) -> tuple[pd.Timestamp, pd.DataFrame | None]:
+    """Run AM for a single timestep; return (time, band-indexed DataFrame) or (time, None)."""
+    try:
+        freq_df = (
+            AmModelPredictor.from_frames(
+                time, surf_df, pres_df,
+                freq_min=freq_min,
+                freq_max=freq_max,
+                freq_step=freq_step,
+            )
+            .run()
+            .droplevel("date")
+        )
+        return time, _band_averages(freq_df, band_frequencies)
+    except Exception:
+        logger.warning(f"Error in calculating sensitivity at {time}")
+        return time, None
+
+
 def _band_averages(freq_df: pd.DataFrame, band_frequencies: dict) -> pd.DataFrame:
     """Average columns of a frequency-indexed DataFrame over each named band."""
     freq_axis = freq_df.index
@@ -337,44 +362,28 @@ class VlaSensitivityEstimator:
             logger.exception("Error computing sensitivity estimates.")
             self.df = None
 
-    def _run_one(
-        self,
-        time: pd.Timestamp,
-        surf_df: pd.DataFrame,
-        pres_df: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """Run AM for a single timestep; return a (band,)-indexed DataFrame."""
-        freq_df = (
-            AmModelPredictor.from_frames(
-                time,
-                surf_df,
-                pres_df,
-                freq_min=self.freq_min,
-                freq_max=self.freq_max,
-                freq_step=self.freq_step,
-            )
-            .run()
-            .droplevel("date")
-        )
-        return _band_averages(freq_df, self.band_frequencies)
-
     def _run_series(
         self,
         surf_df: pd.DataFrame,
         pres_df: pd.DataFrame,
+        n_workers: int | None = None,
     ) -> pd.DataFrame:
         """Run AM for all timesteps; return a (date, band)-indexed DataFrame."""
         times = pres_df.index.get_level_values("date").intersection(surf_df.index)
-        frames, keys = [], []
-        for time in times:
-            try:
-                frames.append(self._run_one(time, surf_df, pres_df))
-                keys.append(time)
-            except Exception:
-                logger.warning(f"Error in calculating sensitivity at {time}")
+        args = [
+            (t, surf_df, pres_df, self.freq_min, self.freq_max, self.freq_step, self.band_frequencies)
+            for t in times
+        ]
+        if n_workers == 1:
+            results = [_run_one(*a) for a in args]
+        else:
+            with multiprocessing.Pool(n_workers) as pool:
+                results = pool.starmap(_run_one, args)
+        frames = [(t, df) for t, df in results if df is not None]
         if not frames:
             return pd.DataFrame()
-        return pd.concat(frames, keys=keys, names=["date", "band"])
+        keys, valid_frames = zip(*frames)
+        return pd.concat(valid_frames, keys=keys, names=["date", "band"])
 
     def _compute_seasonal_baseline(self) -> pd.DataFrame:
         """Run the seasonal AM model; return a (band,)-indexed baseline DataFrame."""
@@ -386,11 +395,11 @@ class VlaSensitivityEstimator:
         ).run()
         return _band_averages(clim_df, self.band_frequencies)
 
-    def compute(self) -> pd.DataFrame | None:
+    def compute(self, n_workers: int | None = None) -> pd.DataFrame | None:
         """Build the sensitivity DataFrame from the forecast queries."""
         surf_df = self.surf_query.df
         pres_df = self.pres_query.df
-        series_df = self._run_series(surf_df, pres_df)
+        series_df = self._run_series(surf_df, pres_df, n_workers=n_workers)
         if series_df.empty:
             return None
         baseline_df = self._compute_seasonal_baseline()
