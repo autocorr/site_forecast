@@ -106,15 +106,18 @@ class AmModelPredictor:
 
     @classmethod
     def from_frames(
-        cls, time: pd.Timestamp, surf_df: pd.DataFrame, pres_df: pd.DataFrame, **kwargs
+        cls,
+        surf_row: pd.Series,
+        pres_df: pd.DataFrame,
+        **kwargs,
     ):
-        pwv = surf_df.loc[time, "total_column_integrated_water_vapour"] * u.mm
-        surf_pres = surf_df.loc[time, "surface_pressure"] * u.hPa
-        this_pres_df = pres_df.xs(time, level="date")
-        pressure = this_pres_df.index.get_level_values("pressure").values * u.hPa
-        temperature = this_pres_df["temperature"].values * u.deg_C
+        time = surf_row.name
+        pwv = surf_row["total_column_integrated_water_vapour"] * u.mm
+        surf_pres = surf_row["surface_pressure"] * u.hPa
+        pressure = pres_df.index.get_level_values("pressure").values * u.hPa
+        temperature = pres_df["temperature"].values * u.deg_C
         relative_humidity = (
-            this_pres_df["relative_humidity"].values / 100 * u.dimensionless_unscaled
+            pres_df["relative_humidity"].values / 100 * u.dimensionless_unscaled
         )
         return cls(
             pressure,
@@ -278,8 +281,8 @@ class VlaSeasonalPredictor:
 
 def _run_one(
     time: pd.Timestamp,
-    surf_df: pd.DataFrame,
-    pres_df: pd.DataFrame,
+    surf_row: pd.Series,
+    pres_slice: pd.DataFrame,
     freq_min: u.Quantity,
     freq_max: u.Quantity,
     freq_step: u.Quantity,
@@ -289,7 +292,8 @@ def _run_one(
     try:
         freq_df = (
             AmModelPredictor.from_frames(
-                time, surf_df, pres_df,
+                surf_row,
+                pres_slice,
                 freq_min=freq_min,
                 freq_max=freq_max,
                 freq_step=freq_step,
@@ -351,9 +355,13 @@ class VlaSensitivityEstimator:
         self,
         om_query_surf: "OpenMeteoVlaQuery",
         om_query_pres: "OpenMeteoVlaPressureQuery",
+        n_workers: int = 30,
     ):
+        if n_workers < 1:
+            raise ValueError(f"Invalid number of workers: {n_workers=}")
         self.surf_query = om_query_surf
         self.pres_query = om_query_pres
+        self.n_workers = n_workers
         self._time = om_query_surf.forecast_time
         self.df = None
         try:
@@ -366,24 +374,32 @@ class VlaSensitivityEstimator:
         self,
         surf_df: pd.DataFrame,
         pres_df: pd.DataFrame,
-        n_workers: int | None = None,
     ) -> pd.DataFrame:
         """Run AM for all timesteps; return a (date, band)-indexed DataFrame."""
         times = pres_df.index.get_level_values("date").intersection(surf_df.index)
         args = [
-            (t, surf_df, pres_df, self.freq_min, self.freq_max, self.freq_step, self.band_frequencies)
+            (
+                t,
+                surf_df.loc[t],
+                pres_df.xs(t, level="date"),
+                self.freq_min,
+                self.freq_max,
+                self.freq_step,
+                self.band_frequencies,
+            )
             for t in times
         ]
-        if n_workers == 1:
+        if self.n_workers == 1:
             results = [_run_one(*a) for a in args]
         else:
-            with multiprocessing.Pool(n_workers) as pool:
+            with multiprocessing.Pool(self.n_workers) as pool:
                 results = pool.starmap(_run_one, args)
         frames = [(t, df) for t, df in results if df is not None]
         if not frames:
             return pd.DataFrame()
-        keys, valid_frames = zip(*frames)
-        return pd.concat(valid_frames, keys=keys, names=["date", "band"])
+        else:
+            keys, valid_frames = zip(*frames)
+            return pd.concat(valid_frames, keys=keys, names=["date", "band"])
 
     def _compute_seasonal_baseline(self) -> pd.DataFrame:
         """Run the seasonal AM model; return a (band,)-indexed baseline DataFrame."""
@@ -395,11 +411,9 @@ class VlaSensitivityEstimator:
         ).run()
         return _band_averages(clim_df, self.band_frequencies)
 
-    def compute(self, n_workers: int | None = None) -> pd.DataFrame | None:
+    def compute(self) -> pd.DataFrame | None:
         """Build the sensitivity DataFrame from the forecast queries."""
-        surf_df = self.surf_query.df
-        pres_df = self.pres_query.df
-        series_df = self._run_series(surf_df, pres_df, n_workers=n_workers)
+        series_df = self._run_series(self.surf_query.df, self.pres_query.df)
         if series_df.empty:
             return None
         baseline_df = self._compute_seasonal_baseline()
