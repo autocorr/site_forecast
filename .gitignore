@@ -56,3 +56,5 @@ distribute-*.tar.gz
 
 # Mac OSX
 .DS_Store
+# Added by code-review-graph
+.code-review-graph/
