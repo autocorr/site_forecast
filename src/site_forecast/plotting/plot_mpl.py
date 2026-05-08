@@ -24,6 +24,7 @@ BAND_CMAP = ListedColormap(
     ["darkorchid", "royalblue", "mediumturquoise", "gold", "0.5", "0.3"],
 )
 BAND_NORM = plt.Normalize(vmin=-0.5, vmax=5.5)
+SENS_BANDS = ("X", "U", "K", "A", "Q")
 
 
 warnings.filterwarnings(
@@ -42,7 +43,6 @@ def apply_mpl_settings():
     plt.rc("text", usetex=False)
     plt.rc("font", size=10, family="cmu serif")
     plt.rc("mathtext", fontset="cm")
-    plt.rc("axes", unicode_minus=False)
     plt.rc("xtick", direction="in", top=True)
     plt.rc("ytick", direction="in", right=True)
     plt.rc("axes", unicode_minus=False)
@@ -1223,6 +1223,143 @@ def plot_operator_summary_long(fc, outname="summary_long") -> None:
     savefig(outname, t_forecast=when, h_pad=0.15)
 
 
+def draw_sensitivity_panels_clear(
+    axes, fc, column, ylabel, ylim, add_baseline=False, ylog=False
+) -> None:
+    df = fc.sensitivity.clear_df
+    for ax, band in zip(axes, reversed(SENS_BANDS)):
+        series = df.xs(band, level="band")[column]
+        if ylog:
+            series = np.log10(series)
+        if add_baseline:
+            baseline = fc.sensitivity.baseline_df.loc[band, column]
+            ax.axhline(baseline, linestyle="dashed", color="dodgerblue", linewidth=1.0)
+        ax.plot(
+            series.index, series, color="darkred", linewidth=1.5, drawstyle="steps-mid"
+        )
+        annotate_with_patheffects(ax, band, xy=(0.975, 0.82), xycoords="axes fraction")
+        style_single_panel_plot_long(ax, fc)
+        ax.set_ylim(ylim)
+        ax.label_outer()
+        if ax.get_subplotspec().is_last_row():
+            ax.set_ylabel(ylabel)
+
+
+def draw_sensitivity_panels_cloud(
+    axes, fc, column, ylabel, ylim, add_baseline=False, ylog=False
+) -> None:
+    df = fc.sensitivity.cloud_df
+    xlim = (
+        fc.forecast_time - pd.Timedelta("2h"),
+        fc.forecast_time + pd.Timedelta("12h"),
+    )
+    for ax, band in zip(axes, reversed(SENS_BANDS)):
+        series = df.xs(band, level="band")[column]
+        if ylog:
+            series = np.log10(series)
+        if add_baseline:
+            baseline = df.xs(band, level="band")[f"{column}_cl"].iloc[0]
+            ax.axhline(baseline, linestyle="dashed", color="dodgerblue", linewidth=1.0)
+        q_000 = series.xs(0.00, level="quantile")
+        q_025 = series.xs(0.25, level="quantile")
+        q_050 = series.xs(0.50, level="quantile")
+        q_075 = series.xs(0.75, level="quantile")
+        q_100 = series.xs(1.00, level="quantile")
+        dates = q_000.index.to_pydatetime()
+        ax.fill_between(
+            dates,
+            q_000,
+            q_100,
+            facecolor="gold",
+            edgecolor="none",
+            step="mid",
+        )
+        ax.fill_between(
+            dates,
+            q_025,
+            q_075,
+            facecolor="darkorange",
+            edgecolor="none",
+            step="mid",
+        )
+        ax.plot(dates, q_050, color="darkred", linewidth=1.5, drawstyle="steps-mid")
+        annotate_with_patheffects(ax, band, xy=(0.94, 0.82), xycoords="axes fraction")
+        style_single_panel_plot(ax, fc)
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        ax.label_outer()
+        if ax.get_subplotspec().is_last_row():
+            ax.set_ylabel(ylabel)
+
+
+def plot_eff_time_clear(fc, outname="eff_time_clear") -> None:
+    if not fc.sensitivity.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, axes = plt.subplots(figsize=(8, 6), nrows=5, sharex=True)
+    for ax in axes:
+        ax.set_yticks(range(4), labels=list("0123"))
+        ax.axhline(1, linestyle="dashed", color="0.4", linewidth=1.0)
+    draw_sensitivity_panels_clear(
+        axes,
+        fc,
+        column="eff_time",
+        ylabel=r"$t_\mathrm{eff} / t_\mathrm{eff,seas}$",
+        ylim=(-0.1, 3.5),
+    )
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_eff_time_cloud(fc, outname="eff_time_cloud") -> None:
+    if not fc.sensitivity.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, axes = plt.subplots(figsize=(4, 6), nrows=5, sharex=True)
+    for ax in axes:
+        ax.set_yticks(range(4), labels=list("0123"))
+        ax.axhline(1, linestyle="dashed", color="0.4", linewidth=1.0)
+    draw_sensitivity_panels_cloud(
+        axes,
+        fc,
+        column="eff_time",
+        ylabel=r"$t_\mathrm{eff} / t_\mathrm{eff,seas}$",
+        ylim=(-0.1, 3.5),
+    )
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_transmit_clear(fc, outname="transmit_clear") -> None:
+    if not fc.sensitivity.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, axes = plt.subplots(figsize=(8, 6), nrows=5, sharex=True)
+    draw_sensitivity_panels_clear(
+        axes,
+        fc,
+        column="transmittance",
+        ylabel=r"Transmittance",
+        ylim=(0.5, 1.05),
+        add_baseline=True,
+    )
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_transmit_cloud(fc, outname="transmit_cloud") -> None:
+    if not fc.sensitivity.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, axes = plt.subplots(figsize=(4, 6), nrows=5, sharex=True)
+    draw_sensitivity_panels_cloud(
+        axes,
+        fc,
+        column="transmittance",
+        ylabel=r"Transmittance",
+        ylim=(0.5, 1.05),
+        add_baseline=True,
+    )
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
 def plot_all_weather(fc):
     plot_phase_rms_forecast(fc)
     plot_phase_rms_forecast_long(fc)
@@ -1239,6 +1376,10 @@ def plot_all_weather(fc):
     plot_cloud_cover_point(fc)
     plot_operator_summary(fc)
     plot_operator_summary_long(fc)
+    plot_eff_time_clear(fc)
+    plot_eff_time_cloud(fc)
+    plot_transmit_clear(fc)
+    plot_transmit_cloud(fc)
     for hq in fc.herbie_queries.values():
         if not hq.okay:
             logger.warn(f"Skipping plots for: {hq.query_type}")

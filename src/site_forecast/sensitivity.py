@@ -548,6 +548,7 @@ class VlaSensitivityEstimator(QueryBase):
         self.clwp_query = hq_query_tcolw
         self.n_workers = n_workers
         self._time = om_query_surf.forecast_time
+        self.baseline_df = self._compute_seasonal_baseline()
         self.clear_df = None
         self.cloud_df = None
         try:
@@ -722,7 +723,6 @@ class VlaSensitivityEstimator(QueryBase):
             the first 12 hours across all TCOLW spatial quantiles, or ``None``
             if no cloud data are available or the run produced no results.
         """
-        baseline_df = self._compute_seasonal_baseline()
         surf_df = self.surf_query.df
         pres_df = self.pres_query.df
 
@@ -733,10 +733,10 @@ class VlaSensitivityEstimator(QueryBase):
             cloud_df = None
 
         return (
-            self._add_derived_columns(clear_df, baseline_df)
+            self._add_derived_columns(clear_df, self.baseline_df)
             if clear_df is not None and not clear_df.empty
             else None,
-            self._add_derived_columns(cloud_df, baseline_df)
+            self._add_derived_columns(cloud_df, self.baseline_df)
             if cloud_df is not None and not cloud_df.empty
             else None,
         )
