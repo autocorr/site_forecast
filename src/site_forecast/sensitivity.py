@@ -4,6 +4,9 @@ if TYPE_CHECKING:
     from .query.open_meteo import OpenMeteoVlaQuery, OpenMeteoVlaPressureQuery
     from .query.herbie_maps import HerbieQuery
 
+import os
+import atexit
+import shutil
 import multiprocessing
 from numbers import Real
 from pathlib import Path
@@ -180,6 +183,7 @@ class AmModelPredictor:
         self,
         pwv: u.Quantity["length"] | None = None,
         water_cloud: u.Quantity["surface_mass_density"] | None = None,
+        cache_dir: Path | None = None,
     ) -> pd.DataFrame:
         """
         Run the AM radiative transfer model and return spectral results.
@@ -214,7 +218,7 @@ class AmModelPredictor:
             freq_max=self.freq_max,
             freq_step=self.freq_step,
         )
-        df = model.run()
+        df = model.run(cache_dir=cache_dir)
         df["date"] = self.time
         df.set_index(["date", "frequency"], inplace=True)
         return df
@@ -402,6 +406,16 @@ def _interp_pres_to_times(
     )
 
 
+def _get_worker_cache_path() -> Path:
+    return amwrap.ENV["AM_CACHE_PATH"] / f"_am_{os.getpid()}"
+
+
+def _worker_init() -> None:
+    cache_path = _get_worker_cache_path()
+    cache_path.mkdir(parents=True, exist_ok=True)
+    atexit.register(shutil.rmtree, str(cache_path), ignore_errors=True)
+
+
 def _run_am_model(
     time: pd.Timestamp,
     surf_row: pd.Series,
@@ -438,7 +452,11 @@ def _run_am_model(
             )
         else:
             water_cloud = None
-        df = predictor.run(water_cloud=water_cloud).droplevel("date")
+        cache_path = _get_worker_cache_path()
+        cache_dir = cache_path if cache_path.exists() else None
+        df = predictor.run(water_cloud=water_cloud, cache_dir=cache_dir).droplevel(
+            "date"
+        )
         return time, tcolw_quantile, _band_averages(df, band_frequencies)
     except:
         msg = f"Error in calculating sensitivity at {time}"
@@ -654,8 +672,12 @@ class VlaSensitivityEstimator(QueryBase):
         if self.n_workers == 1:
             results = [_run_am_model(*a) for a in args]
         else:
-            with multiprocessing.Pool(self.n_workers) as pool:
+            pool = multiprocessing.Pool(self.n_workers, initializer=_worker_init)
+            try:
                 results = pool.starmap(_run_am_model, args)
+            finally:
+                pool.close()
+                pool.join()  # atexit in _worker_init runs here
 
         # Build the DataFrames and MultiIndex's depending on context.
         if tcolw_df is not None:
