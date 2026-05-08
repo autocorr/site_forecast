@@ -517,7 +517,7 @@ class VlaSensitivityEstimator(QueryBase):
         om_query_surf: "OpenMeteoVlaQuery",
         om_query_pres: "OpenMeteoVlaPressureQuery",
         hq_query_tcolw: Optional["HerbieQuery"],
-        n_workers: int = 2,
+        n_workers: int = 20,
     ):
         """
         Parameters

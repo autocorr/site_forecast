@@ -1,5 +1,5 @@
-
 import os
+
 os.environ["DARTS_CONFIGURE_MATPLOTLIB"] = "0"
 
 import time
@@ -12,56 +12,64 @@ from pandas import Timestamp
 from schedule import Scheduler
 
 from . import (
-        CONFIG,
-        KMHOUR_TO_MS,
-        logger,
-        _now_dir,
+    CONFIG,
+    KMHOUR_TO_MS,
+    logger,
+    _now_dir,
 )
 from .plotting.plot_mpl import plot_all_weather
 from .plotting.plot_plotly import plot_vlba_multisite
-from .predict_phase import (ModelPhaseForecast, LongModelPhaseForecast)
+from .predict_phase import ModelPhaseForecast, LongModelPhaseForecast
 from .query.herbie_maps import HerbieQuery
-from .query.monitor import (ApiQuery, WeatherStationQuery)
+from .query.monitor import ApiQuery, WeatherStationQuery
 from .query.ndfd import NdfdQuery
-from .query.open_meteo import (OpenMeteoVlaQuery, OpenMeteoMultiSiteQuery)
+from .query.open_meteo import (
+    OpenMeteoVlaQuery,
+    OpenMeteoMultiSiteQuery,
+    OpenMeteoVlaPressureQuery,
+)
+from .sensitivity import VlaSensitivityEstimator
 
 
 OUT_COLS = [
-        "temperature_2m",
-        "relative_humidity_2m",
-        "dew_point_2m",
-        "surface_pressure",
-        "wind_gusts_10m",
-        "wind_speed_10m",
-        "wind_direction_10m",
-        "total_column_integrated_water_vapour",
-        "cloud_cover",
-        "cloud_cover_low",
-        "cloud_cover_mid",
-        "cloud_cover_high",
-        "precipitation_probability",
-        "precipitation",
-        "rain",
-        "showers",
-        "snowfall",
-        "phase_rms",
+    "temperature_2m",
+    "relative_humidity_2m",
+    "dew_point_2m",
+    "surface_pressure",
+    "wind_gusts_10m",
+    "wind_speed_10m",
+    "wind_direction_10m",
+    "total_column_integrated_water_vapour",
+    "cloud_cover",
+    "cloud_cover_low",
+    "cloud_cover_mid",
+    "cloud_cover_high",
+    "precipitation_probability",
+    "precipitation",
+    "rain",
+    "showers",
+    "snowfall",
+    "phase_rms",
 ]
 
 
 class Forecast:
     def __init__(self):
         self.forecast_time = pd.Timestamp.now(tz="utc")
-        self.weather    = OpenMeteoVlaQuery()
+        self.weather = OpenMeteoVlaQuery()
         self.weather_ms = OpenMeteoMultiSiteQuery()
-        self.phase      = ApiQuery()
-        self.station    = WeatherStationQuery()
-        self.ndfd       = NdfdQuery()
-        self.predict    = ModelPhaseForecast(self.weather, self.phase)
+        self.weather_pres = OpenMeteoVlaPressureQuery()
+        self.phase = ApiQuery()
+        self.station = WeatherStationQuery()
+        self.ndfd = NdfdQuery()
+        self.predict = ModelPhaseForecast(self.weather, self.phase)
         self.predict_long = LongModelPhaseForecast(self.weather, self.phase)
         self.herbie_queries = {
-                q: HerbieQuery(query_type=q)
-                for q in ("veril", "tcolw", "mcc")
+            q: HerbieQuery(query_type=q) for q in ("veril", "tcolw", "mcc")
         }
+        self.sensitivity = VlaSensitivityEstimator(
+            self.weather, self.weather_pres, self.herbie_queries["tcolw"]
+        )
 
     @property
     def now_dir(self) -> Path:
@@ -71,7 +79,9 @@ class Forecast:
 
     @property
     def forecast_root(self) -> Path:
-        return Path(CONFIG.get("Paths", "forecasts", fallback="./forecasts")).expanduser()
+        return Path(
+            CONFIG.get("Paths", "forecasts", fallback="./forecasts")
+        ).expanduser()
 
     @property
     def forecast_dir(self) -> Path:
@@ -79,13 +89,15 @@ class Forecast:
 
     def save_data(self):
         queries = [
-                self.weather,
-                self.weather_ms,
-                self.phase,
-                self.station,
-                self.ndfd,
-                self.predict,
-                self.predict_long,
+            self.weather,
+            self.weather_ms,
+            self.weather_pres,
+            self.phase,
+            self.station,
+            self.ndfd,
+            self.predict,
+            self.predict_long,
+            self.sensitivity,
         ]
         queries.extend(self.herbie_queries.values())
         for query in queries:
@@ -197,4 +209,3 @@ def loop() -> None:
     while True:
         scheduler.run_pending()
         time.sleep(10)  # sec
-

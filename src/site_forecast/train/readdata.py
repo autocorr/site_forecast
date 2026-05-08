@@ -1,4 +1,3 @@
-
 from pathlib import Path
 
 import numpy as np
@@ -28,10 +27,7 @@ def angle_diff(x, y):
 def concat_dataframe(a_df, b_df, clip=True):
     m_df = pd.concat([a_df, b_df], axis="columns")
     if clip:
-        m_df = m_df[
-                (m_df.index > a_df.index.min()) &
-                (m_df.index < a_df.index.max())
-        ]
+        m_df = m_df[(m_df.index > a_df.index.min()) & (m_df.index < a_df.index.max())]
     m_df.interpolate(inplace=True, limit=6, limit_area="inside")
     return m_df
 
@@ -43,8 +39,8 @@ def add_interpolated_phase(a_df, w_df):
     # rather than vice-versa.
     mjd = w_df.mjd.values
     interpolator = interpolate.interp1d(
-            a_df.mjd.values,
-            a_df.rms_phase_med.values,  # Could be multiple columns
+        a_df.mjd.values,
+        a_df.rms_phase_med.values,  # Could be multiple columns
     )
     w_df["phase_rms"] = interpolator(mjd)
     return w_df
@@ -70,10 +66,10 @@ def preprocess_hrrr(a_df, w_df):
 
 
 def get_data_hrrr(
-        api_path=DATA_DIR/"api_data.parquet",
-        weather_path=DATA_DIR/"weather_data.parquet",
-        smooth_phase=3,
-    ):
+    api_path=DATA_DIR / "api_data.parquet",
+    weather_path=DATA_DIR / "weather_data.parquet",
+    smooth_phase=3,
+):
     a_df = pd.read_parquet(api_path)
     # This will introduce a small amount of information leakage (due to the
     # centered window), but because it is only a single 15-min sample, should
@@ -83,10 +79,9 @@ def get_data_hrrr(
     w_df = pd.read_parquet(weather_path)
     w_df = preprocess_hrrr(a_df, w_df)
     w_df = w_df[
-            ((w_df.mjd < 58280) | (58346 < w_df.mjd)) &
-            (w_df.index < a_df.index.max().isoformat())
+        ((w_df.mjd < 58280) | (58346 < w_df.mjd))
+        & (w_df.index < a_df.index.max().isoformat())
     ]
     w_df = add_interpolated_phase(a_df, w_df)
     w_df = w_df[w_df.phase_rms.notnull()].dropna(how="any")
     return w_df
-

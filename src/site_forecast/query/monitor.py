@@ -1,6 +1,5 @@
-
 from pathlib import Path
-from typing import (Optional, Union)
+from typing import Optional, Union
 from numbers import Real
 
 import numpy as np
@@ -12,11 +11,11 @@ from astropy.time import Time
 import psycopg2
 
 from . import (
-        QueryBase,
-        timeseries_from_dataframe,
-        to_parquet,
+    QueryBase,
+    timeseries_from_dataframe,
+    to_parquet,
 )
-from .. import (CONFIG, logger)
+from .. import CONFIG, logger
 
 
 N_BASELINES = 6
@@ -48,8 +47,8 @@ def parse_rows(rows):
             value = np.nan
         items.append([float(time), name.lower(), float(value)])
     df = pd.DataFrame(
-            items,
-            columns=["mjd", "column", "value"],
+        items,
+        columns=["mjd", "column", "value"],
     )
     return df
 
@@ -59,10 +58,10 @@ def rowset_to_dataframe(rowset):
     # Use `pivot_table` since there are occassional double entries for a given
     # time near the of a month (e.g., 2022-06). The default is to take the
     # mean of duplicate entries.
-    df = (df
-            .sort_values("mjd")
-            .pivot_table(columns="column", index="mjd", values="value")
-            .reset_index()
+    df = (
+        df.sort_values("mjd")
+        .pivot_table(columns="column", index="mjd", values="value")
+        .reset_index()
     )
     # Set the index as a UTC time from the recorded MJD
     datetimes = Time(df.mjd.values, format="mjd", scale="utc").datetime
@@ -73,28 +72,33 @@ def rowset_to_dataframe(rowset):
 
 
 class MonitorConnection:
-    def __init__(self,
-                host=None,
-                user=None,
-                password=None,
-                dbname=None,
-                timeout_length=60*3,
-        ):
+    def __init__(
+        self,
+        host=None,
+        user=None,
+        password=None,
+        dbname=None,
+        timeout_length=60 * 3,
+    ):
         if timeout_length <= 0:
-            raise ValueError(f"Timeout duration must be greater than zero: {timeout_length}")
+            raise ValueError(
+                f"Timeout duration must be greater than zero: {timeout_length}"
+            )
         self.timeout_length = timeout_length
+
         def get(s):
             return CONFIG.get("Monitor", s)
+
         host = get("host") if host is None else host
         user = get("user") if user is None else user
         password = get("password") if password is None else password
         dbname = get("dbname") if dbname is None else dbname
         self.connection = psycopg2.connect(
-                host=host,
-                user=user,
-                password=password,
-                dbname=dbname,
-                connect_timeout=self.timeout_length,
+            host=host,
+            user=user,
+            password=password,
+            dbname=dbname,
+            connect_timeout=self.timeout_length,
         )
 
     def __del__(self):
@@ -106,13 +110,15 @@ class MonitorConnection:
 
     def fetch_rows(self, mon_host, device, mon_point, mjd_start, mjd_end):
         if mjd_start > mjd_end:
-            raise ValueError(f"MJD start must come before end: {mjd_start=}, {mjd_end=}")
+            raise ValueError(
+                f"MJD start must come before end: {mjd_start=}, {mjd_end=}"
+            )
         params = {
-                "host": mon_host,
-                "device": device,
-                "mon_point": mon_point,
-                "mjd_start": mjd_start,
-                "mjd_end": mjd_end,
+            "host": mon_host,
+            "device": device,
+            "mon_point": mon_point,
+            "mjd_start": mjd_start,
+            "mjd_end": mjd_end,
         }
         with self.connection.cursor() as cursor:
             cursor.execute(f"SET statement_timeout = {self.timeout_length_ms}")
@@ -139,20 +145,18 @@ class MonitorConnection:
         # between the values for the six baselines. Resample onto a uniform 10 min
         # grid using a mean. This does shift the values by +/- 5 min from their
         # reported time.
-        df = (
-                df
-                .resample("10min")
-                .median()
-                .dropna(how="all")
-                .sort_values(by="mjd")
-        )
+        df = df.resample("10min").median().dropna(how="all").sort_values(by="mjd")
         df["phase_rms_avg"] = column_wise_mean(df, "rms_phase")
         df["phase_rms_med"] = column_wise_median(df, "rms_phase")
-        df["phase_rms"] = df.phase_rms_med.rolling(n_smooth, center=True, min_periods=1).mean()
+        df["phase_rms"] = df.phase_rms_med.rolling(
+            n_smooth, center=True, min_periods=1
+        ).mean()
         df.attrs["has_bad"] = int(np.any(~np.isfinite(df.phase_rms)))
         df.attrs["rms_max"] = df.phase_rms_med.max()
         df.attrs["rms_min"] = df.phase_rms_med.min()
-        logger.info(f"API: (N={df.shape[0]}, has_bad={df.attrs['has_bad']}, min={df.attrs['rms_min']:.3f}, max={df.attrs['rms_max']:.3f})")
+        logger.info(
+            f"API: (N={df.shape[0]}, has_bad={df.attrs['has_bad']}, min={df.attrs['rms_min']:.3f}, max={df.attrs['rms_max']:.3f})"
+        )
         return df
 
     def query_weather(self, mjd_start, mjd_end, **kwargs):
@@ -161,17 +165,17 @@ class MonitorConnection:
           https://library.nrao.edu/public/memos/evla/EVLAM_179.pdf
         """
         items = [
-                ("HMT337", "Temperature"),
-                ("HMT337", "Dewpoint_Temperature"),
-                ("HMT337", "Relative_Humidity"),
-                ("WXT520", "Pressure"),
-                ("WXT520", "Wind_Speed_Minimum"),
-                ("WXT520", "Wind_Speed_Average"),
-                ("WXT520", "Wind_Speed_Maximum"),
-                ("WXT520", "Wind_Direction_Minimum"),
-                ("WXT520", "Wind_Direction_Average"),
-                ("WXT520", "Wind_Direction_Maximum"),
-                (  "M352", "Pyranometer_2"),
+            ("HMT337", "Temperature"),
+            ("HMT337", "Dewpoint_Temperature"),
+            ("HMT337", "Relative_Humidity"),
+            ("WXT520", "Pressure"),
+            ("WXT520", "Wind_Speed_Minimum"),
+            ("WXT520", "Wind_Speed_Average"),
+            ("WXT520", "Wind_Speed_Maximum"),
+            ("WXT520", "Wind_Direction_Minimum"),
+            ("WXT520", "Wind_Direction_Average"),
+            ("WXT520", "Wind_Direction_Maximum"),
+            ("M352", "Pyranometer_2"),
         ]
         row_dfs = []
         for device, mon_point in items:
@@ -196,7 +200,9 @@ class MonitorPointDbQuery(QueryBase):
         if mjd_start is None:
             mjd_start = mjd_end - self.lookback
         if mjd_start > mjd_end:
-            raise ValueError(f"MJD start must come before end: {mjd_start=}, {mjd_end=}")
+            raise ValueError(
+                f"MJD start must come before end: {mjd_start=}, {mjd_end=}"
+            )
         self.mjd_start = mjd_start
         self.mjd_end = mjd_end
         self._time = pd.Timestamp(Time(mjd_end, format="mjd").to_datetime(), tz="utc")
@@ -231,9 +237,7 @@ class ApiQuery(MonitorPointDbQuery):
         super().__init__(mjd_start=mjd_start, mjd_end=mjd_end)
         try:
             df = MonitorConnection(timeout_length=self.timeout_length).query_phases(
-                    mjd_start=self.mjd_start,
-                    mjd_end=self.mjd_end,
-                    **kwargs
+                mjd_start=self.mjd_start, mjd_end=self.mjd_end, **kwargs
             )
             self.df = df
         except:
@@ -246,14 +250,13 @@ class ApiQuery(MonitorPointDbQuery):
 
     def to_model_series(self) -> Optional[TimeSeries]:
         if self.okay_for_model:
-            return (
-                    timeseries_from_dataframe(self.df[["phase_rms"]], freq="10min")
-                    .resample("15min", method="interpolate")
-            )
+            return timeseries_from_dataframe(
+                self.df[["phase_rms"]], freq="10min"
+            ).resample("15min", method="interpolate")
         else:
             return None
 
-    def save_data(self, outname: Union[Path, str]="api") -> None:
+    def save_data(self, outname: Union[Path, str] = "api") -> None:
         if self.df is None:
             logger.warn("Could not save data for API monitor point query.")
             return
@@ -265,19 +268,16 @@ class WeatherStationQuery(MonitorPointDbQuery):
     def __init__(self, mjd_start=None, mjd_end=None, **kwargs):
         super().__init__(mjd_start=mjd_start, mjd_end=mjd_end)
         try:
-            self.df = MonitorConnection(timeout_length=self.timeout_length).query_weather(
-                    mjd_start=self.mjd_start,
-                    mjd_end=self.mjd_end,
-                    **kwargs
-            )
+            self.df = MonitorConnection(
+                timeout_length=self.timeout_length
+            ).query_weather(mjd_start=self.mjd_start, mjd_end=self.mjd_end, **kwargs)
         except:
             logger.exception("Error retrieving site weather station data.")
             self.df = None
 
-    def save_data(self, outname: Union[Path, str]="station") -> None:
+    def save_data(self, outname: Union[Path, str] = "station") -> None:
         if not self.okay:
             logger.warn("Could not save data for site weather station query.")
             return
         outpath = self.forecast_dir / Path(outname)
         to_parquet(self.df, outpath)
-

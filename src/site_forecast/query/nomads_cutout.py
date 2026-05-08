@@ -17,6 +17,7 @@ Because cfgrib requires a real file path and does not support reading
 from an in-memory file-like object, temporary GRIB2 files are written
 to ``/dev/shm`` (a RAM-backed tmpfs on Linux) to avoid spindle disk I/O.
 """
+
 import os
 import time as time_module
 import tempfile
@@ -42,7 +43,7 @@ from . import (
     normalize_time,
     wrap_coordinates,
 )
-from .. import (CONFIG, SITE_LAT, SITE_LON, logger)
+from .. import CONFIG, SITE_LAT, SITE_LON, logger
 from .herbie_maps import (
     subset_rectangular_region,
     extract_position,
@@ -63,15 +64,15 @@ warnings.filterwarnings(
 # NOMADS CGI filter endpoints, keyed by HRRR product type.
 NOMADS_FILTER = {
     "subh": "https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_sub.pl",
-    "sfc":  "https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_2d.pl",
+    "sfc": "https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_2d.pl",
 }
 # File naming pattern for each product type.
 NOMADS_FILE_PAT = {
     "subh": "hrrr.t{hour:02d}z.wrfsubhf{fxx:02d}.grib2",
-    "sfc":  "hrrr.t{hour:02d}z.wrfsfcf{fxx:02d}.grib2",
+    "sfc": "hrrr.t{hour:02d}z.wrfsfcf{fxx:02d}.grib2",
 }
-DEFAULT_FXX         = list(range(13))  # forecast hours 0..12
-HRRR_PROD_LAG_HOURS = 2               # typical HRRR upload lag behind real time
+DEFAULT_FXX = list(range(13))  # forecast hours 0..12
+HRRR_PROD_LAG_HOURS = 2  # typical HRRR upload lag behind real time
 
 
 def _make_session(retries: int = 3, backoff_factor: float = 2.0) -> requests.Session:
@@ -102,8 +103,8 @@ def _build_url(
 ) -> str:
     """Construct a NOMADS filter CGI URL for a single HRRR GRIB2 file."""
     filter_url = NOMADS_FILTER[product]
-    filename   = NOMADS_FILE_PAT[product].format(hour=run_hour, fxx=fxx)
-    lev_key    = "lev_" + layer.replace(" ", "_")
+    filename = NOMADS_FILE_PAT[product].format(hour=run_hour, fxx=fxx)
+    lev_key = "lev_" + layer.replace(" ", "_")
     params = [
         f"dir=/hrrr.{date_str}/conus",
         f"file={filename}",
@@ -204,9 +205,7 @@ def get_quantity(
         Directory for temporary GRIB2 files (default ``/dev/shm``).
     """
     if retry_delay < 60:
-        raise ValueError(
-            f"NOAA requests retry delay must be >=60 s: {retry_delay=}"
-        )
+        raise ValueError(f"NOAA requests retry delay must be >=60 s: {retry_delay=}")
     if fxx is None:
         fxx = DEFAULT_FXX
 
@@ -239,7 +238,10 @@ def get_quantity(
             except Exception:
                 logger.warning(
                     "NOMADS fetch attempt %d/%d failed for %s fxx=%d.",
-                    attempt + 1, max_tries, quantity, fh,
+                    attempt + 1,
+                    max_tries,
+                    quantity,
+                    fh,
                 )
                 if attempt < max_tries - 1:
                     time_module.sleep(retry_delay)
@@ -261,41 +263,49 @@ def get_quantity(
 
 def get_tcolw(**kwargs) -> Dataset:
     quantity = "TCOLW"
-    varname  = "tcolw"
-    ds = get_quantity(quantity=quantity, layer="entire atmosphere", product="subh", **kwargs)
+    varname = "tcolw"
+    ds = get_quantity(
+        quantity=quantity, layer="entire atmosphere", product="subh", **kwargs
+    )
     ds = _rename_unknown(ds, varname)
-    ds[varname] = ds[varname].assign_attrs({
-        "GRIB_name":      quantity,
-        "GRIB_shortName": quantity,
-        "GRIB_units":     "kg/m^2",
-        "long_name":      "Total column-integrated cloud water",
-        "units":          "kg/m^2",
-        "standard_name":  quantity,
-        "plot_log":   1,
-        "plot_min":   1e-4,
-        "plot_max":   1e+1,
-        "plot_split": 0.1,
-    })
+    ds[varname] = ds[varname].assign_attrs(
+        {
+            "GRIB_name": quantity,
+            "GRIB_shortName": quantity,
+            "GRIB_units": "kg/m^2",
+            "long_name": "Total column-integrated cloud water",
+            "units": "kg/m^2",
+            "standard_name": quantity,
+            "plot_log": 1,
+            "plot_min": 1e-4,
+            "plot_max": 1e1,
+            "plot_split": 0.1,
+        }
+    )
     return ds
 
 
 def get_tcoli(**kwargs) -> Dataset:
     quantity = "TCOLI"
-    varname  = "tcoli"
-    ds = get_quantity(quantity=quantity, layer="entire atmosphere", product="subh", **kwargs)
+    varname = "tcoli"
+    ds = get_quantity(
+        quantity=quantity, layer="entire atmosphere", product="subh", **kwargs
+    )
     ds = _rename_unknown(ds, varname)
-    ds[varname] = ds[varname].assign_attrs({
-        "GRIB_name":      quantity,
-        "GRIB_shortName": quantity,
-        "GRIB_units":     "kg/m^2",
-        "long_name":      "Total column-integrated cloud ice",
-        "units":          "kg/m^2",
-        "standard_name":  quantity,
-        "plot_log":   1,
-        "plot_min":   1e-4,
-        "plot_max":   1e+1,
-        "plot_split": 0.01,
-    })
+    ds[varname] = ds[varname].assign_attrs(
+        {
+            "GRIB_name": quantity,
+            "GRIB_shortName": quantity,
+            "GRIB_units": "kg/m^2",
+            "long_name": "Total column-integrated cloud ice",
+            "units": "kg/m^2",
+            "standard_name": quantity,
+            "plot_log": 1,
+            "plot_min": 1e-4,
+            "plot_max": 1e1,
+            "plot_split": 0.01,
+        }
+    )
     return ds
 
 
@@ -303,17 +313,21 @@ def get_vil(**kwargs) -> Dataset:
     # HRRR GRIB2 VIL shortName is "veril" in the NCEP param table; cfgrib
     # may return the variable as "veril" directly, or as "unknown" if the
     # eccodes table is missing it.  Handle both cases.
-    ds = get_quantity(quantity="VIL", layer="entire atmosphere", product="subh", **kwargs)
+    ds = get_quantity(
+        quantity="VIL", layer="entire atmosphere", product="subh", **kwargs
+    )
     ds = _rename_unknown(ds, "veril")
-    ds["veril"] = ds["veril"].assign_attrs({
-        "GRIB_units":     "kg/m^2",
-        "GRIB_shortName": "VERIL",
-        "units":          "kg/m^2",
-        "plot_log":   1,
-        "plot_min":   1e-4,
-        "plot_max":   1e+1,
-        "plot_split": 0.1,
-    })
+    ds["veril"] = ds["veril"].assign_attrs(
+        {
+            "GRIB_units": "kg/m^2",
+            "GRIB_shortName": "VERIL",
+            "units": "kg/m^2",
+            "plot_log": 1,
+            "plot_min": 1e-4,
+            "plot_max": 1e1,
+            "plot_split": 0.1,
+        }
+    )
     return ds
 
 
@@ -322,11 +336,13 @@ def get_mcdc(**kwargs) -> Dataset:
         quantity="MCDC", layer="middle cloud layer", product="sfc", **kwargs
     )
     ds = _rename_unknown(ds, "mcc")
-    ds["mcc"] = ds["mcc"].assign_attrs({
-        "plot_log": 0,
-        "plot_min": 0,
-        "plot_max": 100,
-    })
+    ds["mcc"] = ds["mcc"].assign_attrs(
+        {
+            "plot_log": 0,
+            "plot_min": 0,
+            "plot_max": 100,
+        }
+    )
     return ds
 
 
@@ -335,22 +351,24 @@ def get_tcdc(**kwargs) -> Dataset:
         quantity="TCDC", layer="entire atmosphere", product="sfc", **kwargs
     )
     ds = _rename_unknown(ds, "tcc")
-    ds["tcc"] = ds["tcc"].assign_attrs({
-        "plot_log": 0,
-        "plot_min": 0,
-        "plot_max": 100,
-    })
+    ds["tcc"] = ds["tcc"].assign_attrs(
+        {
+            "plot_log": 0,
+            "plot_min": 0,
+            "plot_max": 100,
+        }
+    )
     return ds
 
 
 class NomadsQuery(QueryBase):
     def __init__(
-            self,
-            lat: Union[Latitude, Real] = SITE_LAT,
-            lon: Union[Longitude, Real] = SITE_LON,
-            time: Optional[Timestamp] = None,
-            query_type: Optional[str] = "tcolw",
-            **kwargs
+        self,
+        lat: Union[Latitude, Real] = SITE_LAT,
+        lon: Union[Longitude, Real] = SITE_LON,
+        time: Optional[Timestamp] = None,
+        query_type: Optional[str] = "tcolw",
+        **kwargs,
     ):
         """Query HRRR forecast data from NOMADS via the filter CGI endpoints.
 
@@ -400,8 +418,7 @@ class NomadsQuery(QueryBase):
             m_ds = extract_mean(dss, lat=lat, lon=lon)
             q_ds = extract_quantiles(dss, lat=lat, lon=lon)
             self.ds = (
-                dss
-                .merge(p_ds, compat="override")
+                dss.merge(p_ds, compat="override")
                 .merge(q_ds, compat="override")
                 .merge(m_ds, compat="override")
             )
@@ -474,7 +491,7 @@ class NomadsQuery(QueryBase):
             logger.warn(f"Could not save data for: {self.query_type}")
             return
         if outname is None:
-            model   = self.ds.attrs.get("model", "hrrr")
+            model = self.ds.attrs.get("model", "hrrr")
             outname = f"{model}_{self.query_type}"
         outpath = self.forecast_dir / Path(outname)
         to_netcdf(self.ds, outpath)

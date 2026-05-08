@@ -1,16 +1,15 @@
-
 from pathlib import Path
 from abc import ABC, abstractmethod
 from typing import Union, Optional
 from numbers import Real
 
-from pandas import (DataFrame, Timestamp)
+from pandas import DataFrame, Timestamp
 from darts import TimeSeries
 from xarray import Dataset
 
 from astropy.coordinates import Latitude, Longitude
 
-from .. import (CONFIG, _now_dir)
+from .. import CONFIG, _now_dir
 
 
 class QueryBase(ABC):
@@ -25,7 +24,7 @@ class QueryBase(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def save_data(self, outname: Optional[Union[Path, str]]=None) -> None:
+    def save_data(self, outname: Optional[Union[Path, str]] = None) -> None:
         raise NotImplementedError()
 
     @property
@@ -35,7 +34,9 @@ class QueryBase(ABC):
 
     @property
     def _forecast_root(self) -> Path:
-        return Path(CONFIG.get("Paths", "forecasts", fallback="./forecasts")).expanduser()
+        return Path(
+            CONFIG.get("Paths", "forecasts", fallback="./forecasts")
+        ).expanduser()
 
     @property
     def forecast_dir(self) -> Path:
@@ -54,7 +55,7 @@ def to_netcdf(ds: Dataset, path: Path) -> None:
     ds.to_netcdf(out_path)
 
 
-def timeseries_from_dataframe(df: DataFrame, freq: Optional[str]=None) -> TimeSeries:
+def timeseries_from_dataframe(df: DataFrame, freq: Optional[str] = None) -> TimeSeries:
     """
     First attempt to infer the frequency using the ``fill_missing_dates``
     option in ``TimeSeries.from_dataframe``. If there are individual missing
@@ -80,5 +81,3 @@ def wrap_coordinates(lat, lon) -> (Latitude, Longitude):
     if isinstance(lon, Real):
         lon = Longitude(lon, unit="deg")
     return Latitude(lat), Longitude(lon)
-
-

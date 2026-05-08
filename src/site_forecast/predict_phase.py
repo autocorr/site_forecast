@@ -1,17 +1,16 @@
-
 from pathlib import Path
 from typing import Union
 
 import pandas as pd
-from pandas import (DataFrame, Timestamp)
+from pandas import DataFrame, Timestamp
 
 from darts import TimeSeries
 from darts.models import LightGBMModel
 
-from . import (MODEL_DIR, logger)
+from . import MODEL_DIR, logger
 from .query import (
-        QueryBase,
-        to_parquet,
+    QueryBase,
+    to_parquet,
 )
 
 
@@ -33,10 +32,10 @@ def predict_model(model, series, future, n=48) -> DataFrame:
     if model.name == "no_weather":
         series._has_datetime_index = False
     prediction = model.predict(
-            n=n,
-            series=series,
-            future_covariates=future,
-            verbose=False,
+        n=n,
+        series=series,
+        future_covariates=future,
+        verbose=False,
     )
     if model.name == "no_weather":
         series._has_datetime_index = True
@@ -45,11 +44,11 @@ def predict_model(model, series, future, n=48) -> DataFrame:
 
 class ModelPhaseForecast(QueryBase):
     model_types = {
-            # (has_weather, has_phase): model_name
-            (True,  True):  "full",
-            (False, True):  "no_weather",
-            (True,  False): "no_phase",
-            (False, False): "seasonal",
+        # (has_weather, has_phase): model_name
+        (True, True): "full",
+        (False, True): "no_weather",
+        (True, False): "no_phase",
+        (False, False): "seasonal",
     }
 
     def __init__(self, w_query, p_query, use_phase=True, n=48):
@@ -86,7 +85,7 @@ class ModelPhaseForecast(QueryBase):
     def okay(self) -> bool:
         return self.df is not None
 
-    def save_data(self, outname: Union[Path, str]="predicted_phase") -> None:
+    def save_data(self, outname: Union[Path, str] = "predicted_phase") -> None:
         if not self.okay:
             logger.warn("Could not save data for model phase forecast.")
             return
@@ -98,10 +97,9 @@ class LongModelPhaseForecast(ModelPhaseForecast):
     def __init__(self, w_query, p_query, n=288):
         super().__init__(w_query, p_query, use_phase=False, n=n)
 
-    def save_data(self, outname: Union[Path, str]="predicted_phase_long") -> None:
+    def save_data(self, outname: Union[Path, str] = "predicted_phase_long") -> None:
         if not self.okay:
             logger.warn("Could not save data for long model phase forecast.")
             return
         outpath = self.forecast_dir / Path(outname)
         to_parquet(self.df, outpath)
-

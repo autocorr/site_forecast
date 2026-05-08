@@ -1,4 +1,3 @@
-
 from io import StringIO
 from typing import Union
 from pathlib import Path
@@ -6,9 +5,9 @@ from pathlib import Path
 import requests
 
 import pandas as pd
-from pandas import (DataFrame, Timestamp)
+from pandas import DataFrame, Timestamp
 
-from . import (QueryBase, to_parquet)
+from . import QueryBase, to_parquet
 from .. import logger
 
 
@@ -28,19 +27,19 @@ def query_weather(url=URL) -> DataFrame | None:
         body = lines[1:]
         df = pd.read_csv(StringIO("\n".join(body)), sep=r"\s+")
         df.rename(
-                columns={
-                        "HR": "hour",
-                        "WndDir": "wind_direction",
-                        "WndGust": "wind_gust",
-                        "WndSpeed": "wind_speed",
-                        "DewPt": "dewpoint_temperature",
-                        "Temp": "temperature",
-                },
-                inplace=True,
+            columns={
+                "HR": "hour",
+                "WndDir": "wind_direction",
+                "WndGust": "wind_gust",
+                "WndSpeed": "wind_speed",
+                "DewPt": "dewpoint_temperature",
+                "Temp": "temperature",
+            },
+            inplace=True,
         )
         date = pd.to_datetime(header).normalize()
         hours = pd.to_timedelta(df.hour, unit="hr")
-        df.set_index(date+hours, inplace=True)
+        df.set_index(date + hours, inplace=True)
         df.drop(columns="hour", inplace=True)
         return df
     except:
@@ -49,7 +48,7 @@ def query_weather(url=URL) -> DataFrame | None:
 
 
 class NdfdQuery(QueryBase):
-    def __init__(self, time=None, url: str=URL):
+    def __init__(self, time=None, url: str = URL):
         self._time = pd.Timestamp.now(tz="utc") if time is None else time
         try:
             self.df = query_weather(url=url)
@@ -65,9 +64,8 @@ class NdfdQuery(QueryBase):
     def okay(self) -> bool:
         return self.df is not None
 
-    def save_data(self, outname: Union[Path, str]="ndfd") -> None:
+    def save_data(self, outname: Union[Path, str] = "ndfd") -> None:
         if not self.okay:
             logger.warn(f"Could not save data for NDFD forecast.")
             return
         to_parquet(self.df, self.forecast_dir / outname)
-

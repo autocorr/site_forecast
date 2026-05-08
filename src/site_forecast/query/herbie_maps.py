@@ -1,10 +1,9 @@
-
 import io
 import warnings
 from numbers import Real
 from pathlib import Path
 from contextlib import redirect_stdout
-from typing import (Optional, Union)
+from typing import Optional, Union
 from numbers import Real
 
 import herbie
@@ -12,47 +11,49 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from xarray import Dataset
-from pandas import (DataFrame, Timestamp)
-from astropy.coordinates import (Latitude, Longitude)
+from pandas import DataFrame, Timestamp
+from astropy.coordinates import Latitude, Longitude
 
 from . import (
-        QueryBase,
-        to_parquet,
-        to_netcdf,
-        normalize_time,
-        wrap_coordinates,
+    QueryBase,
+    to_parquet,
+    to_netcdf,
+    normalize_time,
+    wrap_coordinates,
 )
-from .. import (CONFIG, SITE_LAT, SITE_LON, logger, run_with_timeout)
+from .. import CONFIG, SITE_LAT, SITE_LON, logger, run_with_timeout
 
 
-warnings.filterwarnings(action="ignore", category=FutureWarning,
-        message=".*xarray decode_timedelta will default to False.*")
+warnings.filterwarnings(
+    action="ignore",
+    category=FutureWarning,
+    message=".*xarray decode_timedelta will default to False.*",
+)
 
 
 def geodetic_to_number(lat: Latitude, lon: Longitude) -> (Real, Real):
     return (
-            lat.to("deg").value,
-            lon.to("deg").wrap_at("360 deg").value,
+        lat.to("deg").value,
+        lon.to("deg").wrap_at("360 deg").value,
     )
 
 
 def get_var_names(ds):
     return list(
-            q for q in ds.data_vars.keys()
-            if not q.endswith(("_c", "_m", "_p", "_q"))
+        q for q in ds.data_vars.keys() if not q.endswith(("_c", "_m", "_p", "_q"))
     )
 
 
 def get_quantity(
-            quantity="TCOLW",
-            layer="entire atmosphere",
-            model="hrrr",
-            product="subh",
-            time=None,
-            fxx=None,
-            save_dir=None,
-            timeout=120,  # sec
-    ) -> Dataset:
+    quantity="TCOLW",
+    layer="entire atmosphere",
+    model="hrrr",
+    product="subh",
+    time=None,
+    fxx=None,
+    save_dir=None,
+    timeout=120,  # sec
+) -> Dataset:
     if fxx is None:
         fxx = list(range(13))  # 0..12 hours
     elif isinstance(fxx, Real):
@@ -65,17 +66,16 @@ def get_quantity(
         # Forecasts are uploaded sequentially, so check the most recent valid
         # time of the last forecast needed.
         hl = run_with_timeout(
-                herbie.HerbieLatest,
-                kwds=dict(
-                        model=model,
-                        product=product,
-                        fxx=last_fxx,
-                        overwrite=True,
-                        verbose=False,
-                        save_dir="/dev/shm",
-
-                ),
-                timeout=timeout,
+            herbie.HerbieLatest,
+            kwds=dict(
+                model=model,
+                product=product,
+                fxx=last_fxx,
+                overwrite=True,
+                verbose=False,
+                save_dir="/dev/shm",
+            ),
+            timeout=timeout,
         )
         time = hl.date
     else:
@@ -85,23 +85,23 @@ def get_quantity(
     # Use HerbieLatest to get the latest forecast run and then use FastHerbie
     # to download all the forecast steps for that run.
     h = run_with_timeout(
-            herbie.FastHerbie,
-            args=([time],),
-            kwds=dict(
-                    model=model,
-                    product=product,
-                    fxx=fxx,
-                    overwrite=True,
-                    verbose=False,
-                    save_dir=save_dir,
-            ),
-            timeout=timeout,
+        herbie.FastHerbie,
+        args=([time],),
+        kwds=dict(
+            model=model,
+            product=product,
+            fxx=fxx,
+            overwrite=True,
+            verbose=False,
+            save_dir=save_dir,
+        ),
+        timeout=timeout,
     )
     if len(h.objects) == 0:
         raise RuntimeError(f"Empty query: ({quantity=}, {layer=}, {fxx=})")
     search = rf":{quantity}:{layer}:(?:anl|\d+ min fcst|\d+ hour fcst)"
     df = run_with_timeout(h.inventory, args=(search,), timeout=timeout)
-    #df = h.inventory(search)
+    # df = h.inventory(search)
     if df.shape[0] == 0:
         raise RuntimeError(f"Empty inventory: ({quantity=}, {layer=}, {fxx=})")
     ds = run_with_timeout(h.xarray, args=(search,), timeout=timeout)
@@ -114,121 +114,133 @@ def get_quantity(
 def get_tcolw(**kwargs) -> Dataset:
     quantity = "TCOLW"
     ds = get_quantity(
-            quantity=quantity,
-            layer="entire atmosphere",
-            model="hrrr",
-            product="subh",
-            **kwargs
+        quantity=quantity,
+        layer="entire atmosphere",
+        model="hrrr",
+        product="subh",
+        **kwargs,
     )
     ds = ds.rename_vars({"unknown": quantity.lower()})
-    ds['tcolw'] = ds.tcolw.assign_attrs({
-        "GRIB_name": quantity,
-        "GRIB_shortName": quantity,
-        "GRIB_units": "kg/m^2",
-        "long_name": "Total column-integrated cloud water",
-        "units": "kg/m^2",
-        "standard_name": quantity,
-        "plot_log": 1,
-        "plot_min": 1e-4,
-        "plot_max": 1e+1,
-        "plot_split": 0.1,
-    })
+    ds["tcolw"] = ds.tcolw.assign_attrs(
+        {
+            "GRIB_name": quantity,
+            "GRIB_shortName": quantity,
+            "GRIB_units": "kg/m^2",
+            "long_name": "Total column-integrated cloud water",
+            "units": "kg/m^2",
+            "standard_name": quantity,
+            "plot_log": 1,
+            "plot_min": 1e-4,
+            "plot_max": 1e1,
+            "plot_split": 0.1,
+        }
+    )
     return ds
 
 
 def get_tcoli(**kwargs) -> Dataset:
     quantity = "TCOLI"
     ds = get_quantity(
-            quantity=quantity,
-            layer="entire atmosphere",
-            model="hrrr",
-            product="subh",
-            **kwargs
+        quantity=quantity,
+        layer="entire atmosphere",
+        model="hrrr",
+        product="subh",
+        **kwargs,
     )
     ds = ds.rename_vars({"unknown": quantity.lower()})
-    ds['tcoli'] = ds.tcoli.assign_attrs({
-        "GRIB_name": quantity,
-        "GRIB_shortName": quantity,
-        "GRIB_units": "kg/m^2",
-        "long_name": "Total column-integrated cloud ice",
-        "units": "kg/m^2",
-        "standard_name": quantity,
-        "plot_log": 1,
-        "plot_min": 1e-4,
-        "plot_max": 1e+1,
-        "plot_split": 0.01,
-    })
+    ds["tcoli"] = ds.tcoli.assign_attrs(
+        {
+            "GRIB_name": quantity,
+            "GRIB_shortName": quantity,
+            "GRIB_units": "kg/m^2",
+            "long_name": "Total column-integrated cloud ice",
+            "units": "kg/m^2",
+            "standard_name": quantity,
+            "plot_log": 1,
+            "plot_min": 1e-4,
+            "plot_max": 1e1,
+            "plot_split": 0.01,
+        }
+    )
     return ds
 
 
 def get_vil(**kwargs) -> Dataset:
     ds = get_quantity(
-            quantity="VIL",
-            layer="entire atmosphere",
-            model="hrrr",
-            product="subh",
-            **kwargs
+        quantity="VIL",
+        layer="entire atmosphere",
+        model="hrrr",
+        product="subh",
+        **kwargs,
     )
     quantity = "VERIL"
-    ds['veril'] = ds.veril.assign_attrs({
-        "GRIB_units": "kg/m^2",
-        "GRIB_shortName": quantity,
-        "units": "kg/m^2",
-        "plot_log": 1,
-        "plot_min": 1e-4,
-        "plot_max": 1e+1,
-        "plot_split": 0.1,
-    })
+    ds["veril"] = ds.veril.assign_attrs(
+        {
+            "GRIB_units": "kg/m^2",
+            "GRIB_shortName": quantity,
+            "units": "kg/m^2",
+            "plot_log": 1,
+            "plot_min": 1e-4,
+            "plot_max": 1e1,
+            "plot_split": 0.1,
+        }
+    )
     return ds
 
 
 def get_mcdc(**kwargs) -> Dataset:
     ds = get_quantity(
-            quantity="MCDC",
-            layer="middle cloud layer",
-            model="hrrr",
-            product="sfc",
-            **kwargs
+        quantity="MCDC",
+        layer="middle cloud layer",
+        model="hrrr",
+        product="sfc",
+        **kwargs,
     )
-    ds['mcc'] = ds.mcc.assign_attrs({
-        "plot_log": 0,
-        "plot_min": 0,
-        "plot_max": 100,
-    })
+    ds["mcc"] = ds.mcc.assign_attrs(
+        {
+            "plot_log": 0,
+            "plot_min": 0,
+            "plot_max": 100,
+        }
+    )
     return ds
 
 
 def get_tcdc(**kwargs) -> Dataset:
     ds = get_quantity(
-            quantity="TCDC",
-            layer="entire atmosphere",
-            model="hrrr",
-            product="sfc",
-            **kwargs
+        quantity="TCDC",
+        layer="entire atmosphere",
+        model="hrrr",
+        product="sfc",
+        **kwargs,
     )
-    ds['tcc'] = ds.tcc.assign_attrs({
-        "plot_log": 0,
-        "plot_min": 0,
-        "plot_max": 100,
-    })
+    ds["tcc"] = ds.tcc.assign_attrs(
+        {
+            "plot_log": 0,
+            "plot_min": 0,
+            "plot_max": 100,
+        }
+    )
     return ds
 
 
 def subset_rectangular_region(
-            ds,
-            lat: Latitude=SITE_LAT,
-            lon: Longitude=SITE_LON,
-            lat_size=0.450,
-            lon_size=0.543,
-    ) -> Dataset:
+    ds,
+    lat: Latitude = SITE_LAT,
+    lon: Longitude = SITE_LON,
+    lat_size=0.450,
+    lon_size=0.543,
+) -> Dataset:
     lat, lon = geodetic_to_number(lat, lon)
     if lat_size <= 0 or lon_size <= 0:
         raise ValueError(f"Invalid sizes: {lat_size=}, {lon_size=}")
     # FIXME This selection method will break at the wrap-around point 0/360,
     # but the HRRR is limited to the range 225-300 deg so will be okay for now.
     mask = (
-            (lat-lat_size/2 <= ds.latitude)  & (ds.latitude  <= lat+lat_size/2) &
-            (lon-lon_size/2 <= ds.longitude) & (ds.longitude <= lon+lon_size/2)
+        (lat - lat_size / 2 <= ds.latitude)
+        & (ds.latitude <= lat + lat_size / 2)
+        & (lon - lon_size / 2 <= ds.longitude)
+        & (ds.longitude <= lon + lon_size / 2)
     )
     return ds.where(mask, drop=True)
 
@@ -237,46 +249,44 @@ def pick_points(ds, points, method="nearest", k=None) -> Dataset:
     # Redirect STDOUT to avoid the "Growing BallTree" message.
     with redirect_stdout(io.StringIO()) as f:
         return ds.herbie.pick_points(
-                points,
-                method=method,
-                k=k,
-                use_cached_tree=False,
-                verbose=False,
+            points,
+            method=method,
+            k=k,
+            use_cached_tree=False,
+            verbose=False,
         )
 
 
 def extract_position(
-            ds,
-            lat: Latitude=SITE_LAT,
-            lon: Longitude=SITE_LON,
-    ) -> Dataset:
+    ds,
+    lat: Latitude = SITE_LAT,
+    lon: Longitude = SITE_LON,
+) -> Dataset:
     lat, lon = geodetic_to_number(lat, lon)
     if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
         points = pd.DataFrame({"latitude": [lat], "longitude": [lon]})
     else:
         if (n_lat := len(lat)) != (n_lon := len(lon)):
-            raise ValueError(f"Latitude and longitude of unequal length: {n_lat=}, {n_lon=}")
+            raise ValueError(
+                f"Latitude and longitude of unequal length: {n_lat=}, {n_lon=}"
+            )
         points = pd.DataFrame({"latitude": lat, "longitude": lon})
     p_ds = pick_points(ds, points, method="weighted")
     # Select all time steps for point 0 and neighbor/k 0. Data points have
     # already been weighted and averaged and all k values are identical.
     names = list(p_ds.data_vars.keys())
-    dss = (
-            p_ds
-            .sel(k=0, point=0)
-            .rename({s: f"{s}_p" for s in names})
-    )
+    dss = p_ds.sel(k=0, point=0).rename({s: f"{s}_p" for s in names})
     if "step" in dss.dims:
         dss = dss.swap_dims({"step": "date"})
     return dss
 
 
 def extract_circular_region(
-            ds,
-            lat: Latitude=SITE_LAT,
-            lon: Longitude=SITE_LON,
-            radius=23.0,  # km
-    ) -> DataFrame:
+    ds,
+    lat: Latitude = SITE_LAT,
+    lon: Longitude = SITE_LON,
+    radius=23.0,  # km
+) -> DataFrame:
     lat, lon = geodetic_to_number(lat, lon)
     points = pd.DataFrame({"latitude": [lat], "longitude": [lon]})
     if radius <= 0:
@@ -284,31 +294,31 @@ def extract_circular_region(
     # Determine number of pixels in a circle with the given radius. Then
     # select this number of numbers.
     # FIXME Hard-coded to HRRR's 3 km spatial resolution.
-    k = int(np.pi * (radius / 3)**2)
+    k = int(np.pi * (radius / 3) ** 2)
     k = 1 if k == 0 else k
     # Extract values from radius (number of points for "k").
     return (
-            pick_points(ds, points, method="nearest", k=k)
-            .sel(point=0)
-            .expand_dims(dim={"radius": [float(radius)]})
+        pick_points(ds, points, method="nearest", k=k)
+        .sel(point=0)
+        .expand_dims(dim={"radius": [float(radius)]})
     )
 
 
 def extract_quantiles(
-            ds,
-            lat=SITE_LAT,
-            lon=SITE_LON,
-            radii=(10, 20),
-            n_steps=21,
-    ) -> DataFrame:
+    ds,
+    lat=SITE_LAT,
+    lon=SITE_LON,
+    radii=(10, 20),
+    n_steps=21,
+) -> DataFrame:
     quantiles = np.linspace(0, 1, n_steps)
     data_cols = get_var_names(ds)
     to_merge = []
     for radius in radii:
         dss = (
-                extract_circular_region(ds, lat=lat, lon=lon, radius=radius)
-                .quantile(quantiles, dim="k")
-                .rename({c: f"{c}_q" for c in data_cols})
+            extract_circular_region(ds, lat=lat, lon=lon, radius=radius)
+            .quantile(quantiles, dim="k")
+            .rename({c: f"{c}_q" for c in data_cols})
         )
         if "step" in dss.dims:
             dss = dss.swap_dims({"step": "date"})
@@ -317,18 +327,18 @@ def extract_quantiles(
 
 
 def extract_mean(
-            ds,
-            lat=SITE_LAT,
-            lon=SITE_LON,
-            radii=(10, 20),
-    ) -> DataFrame:
+    ds,
+    lat=SITE_LAT,
+    lon=SITE_LON,
+    radii=(10, 20),
+) -> DataFrame:
     data_cols = get_var_names(ds)
     to_merge = []
     for radius in radii:
         dss = (
-                extract_circular_region(ds, lat=lat, lon=lon, radius=radius)
-                .mean(dim="k")
-                .rename({c: f"{c}_m" for c in data_cols})
+            extract_circular_region(ds, lat=lat, lon=lon, radius=radius)
+            .mean(dim="k")
+            .rename({c: f"{c}_m" for c in data_cols})
         )
         if "step" in dss.dims:
             dss = dss.swap_dims({"step": "date"})
@@ -347,26 +357,26 @@ def add_coverage(ds, threshold=1e-4) -> None:
                 for q, v in zip(ss_ds["quantile"], ss_ds[f"{quantity}_q"]):
                     if v >= threshold:
                         break
-                coverage_at_radius.append(1-q.item())
+                coverage_at_radius.append(1 - q.item())
             coverages.append(coverage_at_radius)
         da = xr.DataArray(
-                coverages,
-                coords={"radius": ds.radius, "date": ds.date},
-                dims=["radius", "date"],
-                name=f"{quantity}_c",
+            coverages,
+            coords={"radius": ds.radius, "date": ds.date},
+            dims=["radius", "date"],
+            name=f"{quantity}_c",
         )
         ds[f"{quantity}_c"] = da
 
 
 class HerbieQuery(QueryBase):
     def __init__(
-                self,
-                lat: Union[Latitude, Real]=SITE_LAT,
-                lon: Union[Longitude, Real]=SITE_LON,
-                time: Optional[Timestamp]=None,
-                query_type: Optional[str]="tcolw",
-                **kwargs
-        ):
+        self,
+        lat: Union[Latitude, Real] = SITE_LAT,
+        lon: Union[Longitude, Real] = SITE_LON,
+        time: Optional[Timestamp] = None,
+        query_type: Optional[str] = "tcolw",
+        **kwargs,
+    ):
         """
         Query numerical weather model image data using Herbie. The default query
         is sub-hourly total cloud liquid water data from the HRRR. To specify a
@@ -416,10 +426,9 @@ class HerbieQuery(QueryBase):
             m_ds = extract_mean(dss, lat=lat, lon=lon)
             q_ds = extract_quantiles(dss, lat=lat, lon=lon)
             self.ds = (
-                    dss
-                    .merge(p_ds, compat="override")
-                    .merge(q_ds, compat="override")
-                    .merge(m_ds, compat="override")
+                dss.merge(p_ds, compat="override")
+                .merge(q_ds, compat="override")
+                .merge(m_ds, compat="override")
             )
             add_coverage(self.ds)
         except:
@@ -486,7 +495,7 @@ class HerbieQuery(QueryBase):
     def plot_norm_type(self) -> str:
         return "log" if self.plot_log else "linear"
 
-    def save_data(self, outname: Optional[Union[Path, str]]=None) -> None:
+    def save_data(self, outname: Optional[Union[Path, str]] = None) -> None:
         if not self.okay:
             logger.warn(f"Could not save data for: {self.query_type}")
             return
@@ -495,4 +504,3 @@ class HerbieQuery(QueryBase):
             outname = f"{model}_{self.query_type}"
         outpath = self.forecast_dir / Path(outname)
         to_netcdf(self.ds, outpath)
-

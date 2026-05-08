@@ -1,6 +1,5 @@
-
 from pathlib import Path
-from typing import (Optional, Union, List, Iterable)
+from typing import Optional, Union, List, Iterable
 from numbers import Real
 
 import numpy as np
@@ -8,19 +7,19 @@ import pandas as pd
 from darts import TimeSeries
 from pandas import Timestamp
 from astropy.time import Time
-from astropy.coordinates import (Latitude, Longitude)
+from astropy.coordinates import Latitude, Longitude
 
 import requests_cache
 import openmeteo_requests
 from retry_requests import retry
 
 from . import (
-        QueryBase,
-        timeseries_from_dataframe,
-        to_parquet,
-        wrap_coordinates,
+    QueryBase,
+    timeseries_from_dataframe,
+    to_parquet,
+    wrap_coordinates,
 )
-from .. import (SITE_LAT, SITE_LON, SITES, SITES_BY_NAME, Station, logger)
+from .. import SITE_LAT, SITE_LON, SITES, SITES_BY_NAME, Station, logger
 from ..train import to_training_subset
 
 
@@ -30,73 +29,114 @@ API_URL = "https://api.open-meteo.com/v1/forecast"
 VLA_SITE = SITES_BY_NAME["Y1"]
 
 PRESSURE_LEVELS = [
-        1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 675,
-        650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 350, 325,
-        300, 275, 250, 225, 200, 175, 150, 125, 100, 70, 50, 40, 30, 20, 15, 10,
+    1000,
+    975,
+    950,
+    925,
+    900,
+    875,
+    850,
+    825,
+    800,
+    775,
+    750,
+    725,
+    700,
+    675,
+    650,
+    625,
+    600,
+    575,
+    550,
+    525,
+    500,
+    475,
+    450,
+    425,
+    400,
+    375,
+    350,
+    325,
+    300,
+    275,
+    250,
+    225,
+    200,
+    175,
+    150,
+    125,
+    100,
+    70,
+    50,
+    40,
+    30,
+    20,
+    15,
+    10,
 ]
 
 COLUMNS_VLA_HR = [
-        # Quantities used in phase forecast
-        "total_column_integrated_water_vapour",
-        "boundary_layer_height",
-        "lifted_index",
-        "convective_inhibition",
-        "surface_pressure",
-        "cloud_cover",
-        "cloud_cover_low",
-        "cloud_cover_mid",
-        "cloud_cover_high",
-        #"sensible_heat_flux",
-        #"latent_heat_flux",
-        # Precipitation, storm quantities
-        "weather_code",
-        "rain",
-        "showers",
-        "snowfall",
-        "precipitation_probability",
+    # Quantities used in phase forecast
+    "total_column_integrated_water_vapour",
+    "boundary_layer_height",
+    "lifted_index",
+    "convective_inhibition",
+    "surface_pressure",
+    "cloud_cover",
+    "cloud_cover_low",
+    "cloud_cover_mid",
+    "cloud_cover_high",
+    # "sensible_heat_flux",
+    # "latent_heat_flux",
+    # Precipitation, storm quantities
+    "weather_code",
+    "rain",
+    "showers",
+    "snowfall",
+    "precipitation_probability",
 ]
 
 COLUMNS_VLA_15 = [
-        "temperature_2m",
-        "relative_humidity_2m",
-        "dew_point_2m",
-        "wind_speed_10m",
-        "wind_speed_80m",
-        "wind_direction_10m",
-        "wind_direction_80m",
-        "wind_gusts_10m",
-        "precipitation",
-        "freezing_level_height",
-        "cape",
-        "visibility",
-        "direct_radiation",
-        "diffuse_radiation",
+    "temperature_2m",
+    "relative_humidity_2m",
+    "dew_point_2m",
+    "wind_speed_10m",
+    "wind_speed_80m",
+    "wind_direction_10m",
+    "wind_direction_80m",
+    "wind_gusts_10m",
+    "precipitation",
+    "freezing_level_height",
+    "cape",
+    "visibility",
+    "direct_radiation",
+    "diffuse_radiation",
 ]
 
 COLUMNS_MULTI_HR = [
-        "temperature_2m",
-        "relative_humidity_2m",
-        "dew_point_2m",
-        "precipitation_probability",
-        "precipitation",
-        "cloud_cover",
-        "cloud_cover_low",
-        "cloud_cover_mid",
-        "cloud_cover_high",
-        "wind_speed_10m",
-        "wind_direction_10m",
-        "wind_gusts_10m",
-        "boundary_layer_height",
-        "total_column_integrated_water_vapour",
+    "temperature_2m",
+    "relative_humidity_2m",
+    "dew_point_2m",
+    "precipitation_probability",
+    "precipitation",
+    "cloud_cover",
+    "cloud_cover_low",
+    "cloud_cover_mid",
+    "cloud_cover_high",
+    "wind_speed_10m",
+    "wind_direction_10m",
+    "wind_gusts_10m",
+    "boundary_layer_height",
+    "total_column_integrated_water_vapour",
 ]
 
 
 def date_range_from_response_interval(interval):
     return pd.date_range(
-            start=pd.to_datetime(interval.Time(), unit="s", utc=True),
-            end=pd.to_datetime(interval.TimeEnd(), unit="s", utc=True),
-            freq=pd.Timedelta(seconds=interval.Interval()),
-            inclusive="left",
+        start=pd.to_datetime(interval.Time(), unit="s", utc=True),
+        end=pd.to_datetime(interval.TimeEnd(), unit="s", utc=True),
+        freq=pd.Timedelta(seconds=interval.Interval()),
+        inclusive="left",
     )
 
 
@@ -108,21 +148,22 @@ def response_to_pandas(response, columns, kind="hourly") -> pd.DataFrame:
     else:
         raise ValueError(f"Invalid {kind=}")
     data = {
-            label: wrapped.Variables(i).ValuesAsNumpy()
-            for i, label in enumerate(columns)
+        label: wrapped.Variables(i).ValuesAsNumpy() for i, label in enumerate(columns)
     }
     data.update({"date": date_range_from_response_interval(wrapped)})
     return pd.DataFrame(data).set_index("date")
 
 
 def parse_response(
-        responses,
-        names,
-        hourly_columns=None,
-        minutely_columns=None,
-    ) -> pd.DataFrame:
+    responses,
+    names,
+    hourly_columns=None,
+    minutely_columns=None,
+) -> pd.DataFrame:
     if hourly_columns is None and minutely_columns is None:
-        raise ValueError("At least one of either hourly or minutely columns must be specified.")
+        raise ValueError(
+            "At least one of either hourly or minutely columns must be specified."
+        )
     all_df = []
     for response, name in zip(responses, names):
         # Parse data from the response.
@@ -142,7 +183,7 @@ def parse_response(
         time = Time(df.index)
         df["mjd"] = time.mjd
         df["site"] = name
-        df["hour"] = (df.index.hour + df.index.minute/60).astype(np.float32)
+        df["hour"] = (df.index.hour + df.index.minute / 60).astype(np.float32)
         df["day_of_year"] = df.index.dayofyear.astype(np.int32)
         all_df.append(df)
     m_df = pd.concat(all_df).reset_index().set_index(["date", "site"])
@@ -151,54 +192,56 @@ def parse_response(
 
 
 def request_data(
-        n_days: int=5,
-        sites: List[Station]=[VLA_SITE],
-        hourly_columns: List[str]=COLUMNS_VLA_HR,
-        minutely_columns: List[str]=COLUMNS_VLA_15,
-        n_past_days: int=1,
-    ):
+    n_days: int = 5,
+    sites: List[Station] = [VLA_SITE],
+    hourly_columns: List[str] = COLUMNS_VLA_HR,
+    minutely_columns: List[str] = COLUMNS_VLA_15,
+    n_past_days: int = 1,
+):
     if n_days > 16:
         raise ValueError("Forecast days must be 16 days or fewer.")
     lats = [s.latitude.to("deg").value for s in sites]
     lons = [s.longitude.to("deg").wrap_at("180 deg").value for s in sites]
     names = [s.name for s in sites]
     params = {
-            "latitude": lats,
-            "longitude": lons,
-            "hourly": hourly_columns,
-            "minutely_15": minutely_columns,
-            "models": "gfs_seamless",
-            "forecast_days": n_days,
-            "past_days": n_past_days,
+        "latitude": lats,
+        "longitude": lons,
+        "hourly": hourly_columns,
+        "minutely_15": minutely_columns,
+        "models": "gfs_seamless",
+        "forecast_days": n_days,
+        "past_days": n_past_days,
     }
     openmeteo = openmeteo_requests.Client(session=RETRY_SESSION)
     responses = openmeteo.weather_api(API_URL, params=params)
     df = parse_response(
-            responses,
-            names,
-            hourly_columns=hourly_columns,
-            minutely_columns=minutely_columns,
+        responses,
+        names,
+        hourly_columns=hourly_columns,
+        minutely_columns=minutely_columns,
     )
     logger.info(f"Weather: (N={df.shape[0]}, has_bad={df.attrs['has_bad']})")
     return df
 
 
 def unpivot_pressure_levels(
-            df: pd.DataFrame,
-            pressure_columns: List[str],
-    ) -> pd.DataFrame:
+    df: pd.DataFrame,
+    pressure_columns: List[str],
+) -> pd.DataFrame:
     keep_cols = ["date"] + [c for c in df.columns if "hPa" in c]
     p_df = pd.wide_to_long(
-            df.reset_index()[keep_cols],
-            stubnames=pressure_columns,
-            i=["date"],
-            j="pressure",
-            sep="_",
-            suffix=r"\d+hPa",
+        df.reset_index()[keep_cols],
+        stubnames=pressure_columns,
+        i=["date"],
+        j="pressure",
+        sep="_",
+        suffix=r"\d+hPa",
     )
-    pressures = pd.to_numeric(
-            p_df.index.get_level_values("pressure").str.replace("hPa", "")
-    ).unique().sort_values()  # ascending 10 -> 825 hPa
+    pressures = (
+        pd.to_numeric(p_df.index.get_level_values("pressure").str.replace("hPa", ""))
+        .unique()
+        .sort_values()
+    )  # ascending 10 -> 825 hPa
     p_df.index = p_df.index.set_levels(pressures, level="pressure")
     return p_df.sort_index()
 
@@ -234,7 +277,7 @@ class OpenMeteoQuery(QueryBase):
     def okay(self) -> bool:
         return self.df is not None
 
-    def save_data(self, outname: Union[Path, str, None]=None) -> None:
+    def save_data(self, outname: Union[Path, str, None] = None) -> None:
         if outname is None:
             outname = self.outname
         if not self.okay:
@@ -264,10 +307,10 @@ class OpenMeteoVlaQuery(OpenMeteoQuery):
             Additional keyword arguments are passed to the ``request_data`` function.
         """
         super().__init__(
-                n_days=5,
-                hourly_columns=COLUMNS_VLA_HR,
-                minutely_columns=COLUMNS_VLA_15,
-                **kwargs
+            n_days=5,
+            hourly_columns=COLUMNS_VLA_HR,
+            minutely_columns=COLUMNS_VLA_15,
+            **kwargs,
         )
         self.df.reset_index(level="site", inplace=True)
 
@@ -279,16 +322,16 @@ class OpenMeteoVlaQuery(OpenMeteoQuery):
             start = self.forecast_time - self.delta
             end = self.forecast_time + self.delta
             dates = pd.date_range(
-                    start=start,
-                    end=end,
-                    freq=self.freq,
+                start=start,
+                end=end,
+                freq=self.freq,
             )
             df = pd.DataFrame(
-                    {
-                        "hour": dates.hour + dates.minute/60,
-                        "day_of_year": dates.dayofyear,
-                    },
-                    index=dates,
+                {
+                    "hour": dates.hour + dates.minute / 60,
+                    "day_of_year": dates.dayofyear,
+                },
+                index=dates,
             )
             return timeseries_from_dataframe(df, freq=self.freq)
 
@@ -300,9 +343,10 @@ class OpenMeteoVlaPressureQuery(OpenMeteoQuery):
     outname = "weather_pr"
     pressure_columns = ["temperature", "relative_humidity"]
     hourly_columns = [
-            f"{column}_{level}hPa"
-            for column in pressure_columns
-            for level in PRESSURE_LEVELS if level <= 825
+        f"{column}_{level}hPa"
+        for column in pressure_columns
+        for level in PRESSURE_LEVELS
+        if level <= 825
     ]
 
     def __init__(self, **kwargs):
@@ -316,15 +360,15 @@ class OpenMeteoVlaPressureQuery(OpenMeteoQuery):
             Additional keyword arguments are passed to the ``request_data`` function.
         """
         super().__init__(
-                n_days=5,
-                n_past_days=0,
-                hourly_columns=self.hourly_columns,
-                minutely_columns=None,
-                **kwargs
+            n_days=5,
+            n_past_days=0,
+            hourly_columns=self.hourly_columns,
+            minutely_columns=None,
+            **kwargs,
         )
         self.df = unpivot_pressure_levels(
-                self.df,
-                self.pressure_columns,
+            self.df,
+            self.pressure_columns,
         )
 
 
@@ -345,11 +389,10 @@ class OpenMeteoMultiSiteQuery(OpenMeteoQuery):
             Additional keyword arguments are passed to the ``request_data`` function.
         """
         super().__init__(
-                n_days=5,
-                n_past_days=0,
-                sites=SITES,
-                hourly_columns=COLUMNS_MULTI_HR,
-                minutely_columns=None,
-                **kwargs
+            n_days=5,
+            n_past_days=0,
+            sites=SITES,
+            hourly_columns=COLUMNS_MULTI_HR,
+            minutely_columns=None,
+            **kwargs,
         )
-
