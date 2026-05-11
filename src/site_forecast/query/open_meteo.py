@@ -26,6 +26,7 @@ from ..train import to_training_subset
 CACHE_SESSION = requests_cache.CachedSession(".cache", expire_after=3600)
 RETRY_SESSION = retry(CACHE_SESSION, retries=5, backoff_factor=0.2)
 API_URL = "https://api.open-meteo.com/v1/forecast"
+ENSEMBLE_API_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 VLA_SITE = SITES_BY_NAME["Y1"]
 
 PRESSURE_LEVELS = [
@@ -246,6 +247,53 @@ def unpivot_pressure_levels(
     return p_df.sort_index()
 
 
+def parse_ensemble_response(responses, names, variable: str) -> pd.DataFrame:
+    site_dfs = []
+    for response, name in zip(responses, names):
+        hourly = response.Hourly()
+        dates = date_range_from_response_interval(hourly)
+        member_data = {}
+        for i in range(hourly.VariablesLength()):
+            var = hourly.Variables(i)
+            member_data[var.EnsembleMember()] = var.ValuesAsNumpy()
+        df = pd.DataFrame(member_data, index=dates)
+        df.index.name = "date"
+        df.columns.name = "member"
+        site_dfs.append(df.stack().rename(variable).to_frame())
+    df = (
+        pd.concat(site_dfs, keys=names, names=["site"])
+        .reorder_levels(["date", "site", "member"])
+        .sort_index()
+    )
+    df.attrs["has_bad"] = int(np.any(~np.isfinite(df)))
+    return df
+
+
+def request_ensemble_data(
+    n_days: int = 5,
+    sites: List[Station] = [VLA_SITE],
+    variable: str = "total_column_integrated_water_vapour",
+    model: str = "ecmwf_ifs025_ensemble",
+    n_past_days: int = 1,
+) -> pd.DataFrame:
+    lats = [s.latitude.to("deg").value for s in sites]
+    lons = [s.longitude.to("deg").wrap_at("180 deg").value for s in sites]
+    names = [s.name for s in sites]
+    params = {
+        "latitude": lats,
+        "longitude": lons,
+        "hourly": variable,
+        "models": model,
+        "forecast_days": n_days,
+        "past_days": n_past_days,
+    }
+    openmeteo = openmeteo_requests.Client(session=RETRY_SESSION)
+    responses = openmeteo.weather_api(ENSEMBLE_API_URL, params=params)
+    df = parse_ensemble_response(responses, names, variable)
+    logger.info(f"Ensemble: (N={df.shape[0]}, has_bad={df.attrs['has_bad']})")
+    return df
+
+
 class OpenMeteoQuery(QueryBase):
     delta = pd.Timedelta("12.5h")
     freq = "15min"
@@ -370,6 +418,40 @@ class OpenMeteoVlaPressureQuery(OpenMeteoQuery):
             self.df,
             self.pressure_columns,
         )
+
+
+class OpenMeteoVlaEnsembleQuery(OpenMeteoQuery):
+    delta = pd.Timedelta("12.5h")
+    freq = "1h"
+    query_type = "open-meteo ensemble"
+    outname = "weather_ensemble"
+
+    def __init__(self, **kwargs):
+        """
+        Query the open-meteo ensemble API for ECMWF IFS 0.25° ensemble forecasts
+        of total column integrated water vapour at the VLA site.
+
+        Returns a DataFrame with a MultiIndex of (date, member) where member is
+        the integer ensemble member index (0 = control, 1–50 = perturbed).
+
+        Parameters
+        ----------
+        kwargs :
+            Additional keyword arguments are passed to ``request_ensemble_data``.
+        """
+        self._time = pd.Timestamp.now(tz="utc")
+        try:
+            self.df = request_ensemble_data(
+                n_days=5,
+                n_past_days=0,
+                variable="total_column_integrated_water_vapour",
+                model="ecmwf_ifs025_ensemble",
+                **kwargs,
+            )
+            self.df = self.df.reset_index(level="site", drop=True)
+        except:
+            logger.exception(f"Error retrieving {self.query_type} forecast data.")
+            self.df = None
 
 
 class OpenMeteoMultiSiteQuery(OpenMeteoQuery):
