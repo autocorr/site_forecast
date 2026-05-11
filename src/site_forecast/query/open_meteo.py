@@ -290,7 +290,7 @@ def request_ensemble_data(
     openmeteo = openmeteo_requests.Client(session=RETRY_SESSION)
     responses = openmeteo.weather_api(ENSEMBLE_API_URL, params=params)
     df = parse_ensemble_response(responses, names, variable)
-    logger.info(f"Ensemble: (N={df.shape[0]}, has_bad={df.attrs['has_bad']})")
+    logger.info(f"Weather: (N={df.shape[0]}, has_bad={df.attrs['has_bad']})")
     return df
 
 
@@ -424,7 +424,7 @@ class OpenMeteoVlaEnsembleQuery(OpenMeteoQuery):
     delta = pd.Timedelta("12.5h")
     freq = "1h"
     query_type = "open-meteo ensemble"
-    outname = "weather_ensemble"
+    outname = "weather_pwv_ensemble"
 
     def __init__(self, **kwargs):
         """

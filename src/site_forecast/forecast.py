@@ -27,6 +27,7 @@ from .query.open_meteo import (
     OpenMeteoVlaQuery,
     OpenMeteoMultiSiteQuery,
     OpenMeteoVlaPressureQuery,
+    OpenMeteoVlaEnsembleQuery,
 )
 from .sensitivity import VlaSensitivityEstimator
 
@@ -59,6 +60,7 @@ class Forecast:
         self.weather = OpenMeteoVlaQuery()
         self.weather_ms = OpenMeteoMultiSiteQuery()
         self.weather_pres = OpenMeteoVlaPressureQuery()
+        self.weather_ens = OpenMeteoVlaEnsembleQuery()
         self.phase = ApiQuery()
         self.station = WeatherStationQuery()
         self.ndfd = NdfdQuery()
@@ -68,7 +70,10 @@ class Forecast:
             q: HerbieQuery(query_type=q) for q in ("veril", "tcolw", "mcc")
         }
         self.sensitivity = VlaSensitivityEstimator(
-            self.weather, self.weather_pres, self.herbie_queries["tcolw"]
+            self.weather,
+            self.weather_pres,
+            self.herbie_queries["tcolw"],
+            om_query_ensemble=self.weather_ens,
         )
 
     @property

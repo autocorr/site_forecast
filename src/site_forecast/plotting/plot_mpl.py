@@ -1223,10 +1223,21 @@ def plot_operator_summary_long(fc, outname="summary_long") -> None:
     savefig(outname, t_forecast=when, h_pad=0.15)
 
 
+def _draw_quantile_bands(ax, q_000, q_025, q_050, q_075, q_100) -> None:
+    """Plot 0–100% and 25–75% fill envelopes with a median line."""
+    dates = q_000.index.to_pydatetime()
+    ax.fill_between(dates, q_000, q_100, facecolor="gold", edgecolor="none", step="mid")
+    ax.fill_between(
+        dates, q_025, q_075, facecolor="darkorange", edgecolor="none", step="mid"
+    )
+    ax.plot(dates, q_050, color="darkred", linewidth=1.5, drawstyle="steps-mid")
+
+
 def draw_sensitivity_panels_clear(
     axes, fc, column, ylabel, ylim, add_baseline=False, ylog=False
 ) -> None:
     df = fc.sensitivity.clear_df
+    has_ensemble = "member" in df.index.names
     for ax, band in zip(axes, reversed(SENS_BANDS)):
         series = df.xs(band, level="band")[column]
         if ylog:
@@ -1234,9 +1245,20 @@ def draw_sensitivity_panels_clear(
         if add_baseline:
             baseline = fc.sensitivity.baseline_df.loc[band, column]
             ax.axhline(baseline, linestyle="dashed", color="dodgerblue", linewidth=1.0)
-        ax.plot(
-            series.index, series, color="darkred", linewidth=1.5, drawstyle="steps-mid"
-        )
+        if has_ensemble:
+            unstacked = series.unstack(level="member")
+            _draw_quantile_bands(
+                ax,
+                unstacked.quantile(0.00, axis=1),
+                unstacked.quantile(0.25, axis=1),
+                unstacked.quantile(0.50, axis=1),
+                unstacked.quantile(0.75, axis=1),
+                unstacked.quantile(1.00, axis=1),
+            )
+        else:
+            ax.plot(
+                series.index, series, color="darkred", linewidth=1.5, drawstyle="steps-mid"
+            )
         annotate_with_patheffects(ax, band, xy=(0.975, 0.82), xycoords="axes fraction")
         style_single_panel_plot_long(ax, fc)
         ax.set_ylim(ylim)
@@ -1260,29 +1282,14 @@ def draw_sensitivity_panels_cloud(
         if add_baseline:
             baseline = df.xs(band, level="band")[f"{column}_cl"].iloc[0]
             ax.axhline(baseline, linestyle="dashed", color="dodgerblue", linewidth=1.0)
-        q_000 = series.xs(0.00, level="quantile")
-        q_025 = series.xs(0.25, level="quantile")
-        q_050 = series.xs(0.50, level="quantile")
-        q_075 = series.xs(0.75, level="quantile")
-        q_100 = series.xs(1.00, level="quantile")
-        dates = q_000.index.to_pydatetime()
-        ax.fill_between(
-            dates,
-            q_000,
-            q_100,
-            facecolor="gold",
-            edgecolor="none",
-            step="mid",
+        _draw_quantile_bands(
+            ax,
+            series.xs(0.00, level="quantile"),
+            series.xs(0.25, level="quantile"),
+            series.xs(0.50, level="quantile"),
+            series.xs(0.75, level="quantile"),
+            series.xs(1.00, level="quantile"),
         )
-        ax.fill_between(
-            dates,
-            q_025,
-            q_075,
-            facecolor="darkorange",
-            edgecolor="none",
-            step="mid",
-        )
-        ax.plot(dates, q_050, color="darkred", linewidth=1.5, drawstyle="steps-mid")
         annotate_with_patheffects(ax, band, xy=(0.94, 0.82), xycoords="axes fraction")
         style_single_panel_plot(ax, fc)
         ax.set_xlim(xlim)

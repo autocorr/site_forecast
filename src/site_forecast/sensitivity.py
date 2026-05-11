@@ -1,7 +1,11 @@
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from .query.open_meteo import OpenMeteoVlaQuery, OpenMeteoVlaPressureQuery
+    from .query.open_meteo import (
+        OpenMeteoVlaQuery,
+        OpenMeteoVlaPressureQuery,
+        OpenMeteoVlaEnsembleQuery,
+    )
     from .query.herbie_maps import HerbieQuery
 
 import os
@@ -427,11 +431,14 @@ def _run_am_model(
     tcolw_value=None,
     tcolw_quantile: float | None = None,
     cloud_target_pressure=None,
-) -> tuple[pd.Timestamp, float | None, pd.DataFrame | None]:
+    pwv_series: pd.Series | None = None,
+) -> tuple[pd.Timestamp, float | None, pd.DataFrame | dict | None]:
     """
     Run AM for a single timestep; return (time, quantile, band-indexed
     DataFrame) or (time, quantile, None). Pass tcolw and cloud_target_pressure
-    to include cloud liquid water. Module-level for multiprocessing pickling.
+    to include cloud liquid water. Pass pwv_series (indexed by ensemble member,
+    values in mm) to run one AM model per member and return a dict keyed by
+    member. Module-level for multiprocessing pickling.
     """
     try:
         # Initialize the model predictor for the given vertical atmospheric
@@ -443,6 +450,17 @@ def _run_am_model(
             freq_max=freq_max,
             freq_step=freq_step,
         )
+        cache_path = _get_worker_cache_path()
+        cache_dir = cache_path if cache_path.exists() else None
+        # Ensemble path: one run per PWV member, predictor built once.
+        if pwv_series is not None:
+            member_results = {}
+            for member, pwv_mm in pwv_series.items():
+                df = predictor.run(pwv=pwv_mm * u.mm, cache_dir=cache_dir).droplevel(
+                    "date"
+                )
+                member_results[member] = _band_averages(df, band_frequencies)
+            return time, None, member_results
         # Create array for cloud liquid column density if present.
         if tcolw_value is not None:
             water_cloud = _make_water_cloud_array(
@@ -452,8 +470,6 @@ def _run_am_model(
             )
         else:
             water_cloud = None
-        cache_path = _get_worker_cache_path()
-        cache_dir = cache_path if cache_path.exists() else None
         df = predictor.run(water_cloud=water_cloud, cache_dir=cache_dir).droplevel(
             "date"
         )
@@ -517,6 +533,7 @@ class VlaSensitivityEstimator(QueryBase):
         om_query_surf: "OpenMeteoVlaQuery",
         om_query_pres: "OpenMeteoVlaPressureQuery",
         hq_query_tcolw: Optional["HerbieQuery"],
+        om_query_ensemble: Optional["OpenMeteoVlaEnsembleQuery"] = None,
         n_workers: int = 20,
     ):
         """
@@ -530,13 +547,11 @@ class VlaSensitivityEstimator(QueryBase):
         hq_query_tcolw : HerbieQuery or None
             15-minute HRRR cloud liquid water query. If ``None`` or not okay,
             only the clear-sky hourly forecast is produced.
+        om_query_ensemble : OpenMeteoVlaEnsembleQuery, optional
+            ECMWF IFS ensemble PWV query. If provided and okay, ``clear_df``
+            gains a ``member`` index level: ``(date, band, member)``.
         n_workers : int, optional
             Number of parallel worker processes for AM model runs.
-
-        Raises
-        ------
-        ValueError
-            If ``n_workers`` is less than 1.
         """
         # FIXME This class should really be refactored into two that handle the
         # "long and clear" and "short and cloudy" cases, rather than doing both
@@ -546,6 +561,7 @@ class VlaSensitivityEstimator(QueryBase):
         self.surf_query = om_query_surf
         self.pres_query = om_query_pres
         self.clwp_query = hq_query_tcolw
+        self.ensp_query = om_query_ensemble
         self.n_workers = n_workers
         self._time = om_query_surf.forecast_time
         self.baseline_df = self._compute_seasonal_baseline()
@@ -561,6 +577,10 @@ class VlaSensitivityEstimator(QueryBase):
     @property
     def has_cloud(self) -> bool:
         return self.clwp_query is not None and self.clwp_query.okay
+
+    @property
+    def has_ensemble(self) -> bool:
+        return self.ensp_query is not None and self.ensp_query.okay
 
     def _compute_seasonal_baseline(self) -> pd.DataFrame:
         """Run the seasonal AM model; return a (band,)-indexed baseline DataFrame."""
@@ -611,15 +631,19 @@ class VlaSensitivityEstimator(QueryBase):
         surf_df: pd.DataFrame,
         pres_df: pd.DataFrame,
         tcolw_df: pd.DataFrame | None = None,
+        ensemble_pwv_df: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
         """
-        Run AM for a time series; return a (date, band)- or (date, band,
-        quantile)-indexed DataFrame.
+        Run AM for a time series; return a (date, band)-, (date, band,
+        quantile)-, or (date, band, member)-indexed DataFrame.
 
-        When tcolw_df is None, runs at the hourly cadence of pres_df without
-        cloud water, returning a (date, band) MultiIndex. When tcolw_df is
-        provided, runs at the 15-min cadence of tcolw_df with one run per
-        quantile, returning a (date, band, quantile) MultiIndex.
+        When both tcolw_df and ensemble_pwv_df are None, runs at the hourly
+        cadence of pres_df without cloud water, returning a (date, band)
+        MultiIndex. When tcolw_df is provided, runs at the 15-min cadence of
+        tcolw_df with one run per quantile, returning a (date, band, quantile)
+        MultiIndex. When ensemble_pwv_df is provided, runs at the hourly
+        cadence of pres_df with one run per ensemble member, returning a
+        (date, band, member) MultiIndex.
         """
         # FIXME This should really be better factored to avoid duplication
         # with constructing the arguments, although it is tricky because the
@@ -628,7 +652,32 @@ class VlaSensitivityEstimator(QueryBase):
         # Generate time series axis and arguments based on whether to use cloud
         # values or not before passing them to the runner function and
         # multiprocessing.
-        if tcolw_df is not None:
+        if ensemble_pwv_df is not None:
+            times = (
+                ensemble_pwv_df.index.get_level_values("date")
+                .unique()
+                .intersection(pres_df.index.get_level_values("date").unique())
+                .intersection(surf_df.index)
+            )
+            args = [
+                (
+                    t,
+                    surf_df.loc[t],
+                    pres_df.xs(t, level="date"),
+                    self.freq_min,
+                    self.freq_max,
+                    self.freq_step,
+                    self.band_frequencies,
+                    None,
+                    None,
+                    None,
+                    ensemble_pwv_df.xs(t, level="date")[
+                        "total_column_integrated_water_vapour"
+                    ],
+                )
+                for t in times
+            ]
+        elif tcolw_df is not None:
             # `_interp_pres_to_times` will result in `pres_resolved` having
             # the same index as the `tcolw_df`, so a third intersection is
             # not required.
@@ -681,7 +730,27 @@ class VlaSensitivityEstimator(QueryBase):
                 pool.join()  # atexit in _worker_init runs here
 
         # Build the DataFrames and MultiIndex's depending on context.
-        if tcolw_df is not None:
+        if ensemble_pwv_df is not None:
+            member_frames: dict = {}
+            for t, _, member_results in results:
+                if member_results:
+                    for member, df in member_results.items():
+                        member_frames.setdefault(member, []).append((t, df))
+            if not member_frames:
+                return pd.DataFrame()
+            m_dfs = {}
+            for member, tframes in sorted(member_frames.items()):
+                keys, dfs = zip(*tframes)
+                m_dfs[member] = pd.concat(dfs, keys=keys, names=["date", "band"])
+            band_rank = {b: i for i, b in enumerate(self.band_frequencies)}
+            return (
+                pd.concat(m_dfs, names=["member", "date", "band"])
+                .reorder_levels(["date", "band", "member"])
+                .sort_index(
+                    key=lambda idx: idx.map(band_rank) if idx.name == "band" else idx
+                )
+            )
+        elif tcolw_df is not None:
             by_quantile: dict = {}
             for t, q, df in results:
                 if df is not None:
@@ -726,7 +795,11 @@ class VlaSensitivityEstimator(QueryBase):
         surf_df = self.surf_query.df
         pres_df = self.pres_query.df
 
-        clear_df = self._run_series(surf_df, pres_df)
+        clear_df = self._run_series(
+            surf_df,
+            pres_df,
+            ensemble_pwv_df=self.ensp_query.df if self.has_ensemble else None,
+        )
         if self.has_cloud:
             cloud_df = self._run_series(surf_df, pres_df, tcolw_df=self._get_tcolw_df())
         else:
