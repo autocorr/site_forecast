@@ -757,18 +757,12 @@ def plot_herbie_maps(hq, outstem="maps") -> None:
     if not hq.okay:
         logger.warn(f"Skipping plot: {outname}")
         return
-    # FIXME Determine correct number of panels and page sizing.
-    match hq.n_steps:
-        case 49:
-            fig, axes = plt.subplots(
-                figsize=(8, 11.3), nrows=8, ncols=6, sharex=True, sharey=True
-            )
-        case 13:
-            fig, axes = plt.subplots(
-                figsize=(8, 4.3), nrows=3, ncols=6, sharex=True, sharey=True
-            )
-        case _:
-            raise ValueError(f"Invalid number of steps: {hq.n_steps=}")
+    ncols = 6
+    nrows = (hq.n_steps + ncols - 1) // ncols
+    ysize = 1.4 * nrows + 0.1
+    fig, axes = plt.subplots(
+        figsize=(8, ysize), nrows=nrows, ncols=ncols, sharex=True, sharey=True
+    )
     for ax, step in zip(axes.flat, hq.ds.step):
         s_ds = hq.data.sel(step=step)
         data = s_ds.values.copy()
