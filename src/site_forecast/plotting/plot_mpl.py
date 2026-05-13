@@ -5,6 +5,7 @@
 
 import colorsys
 import warnings
+from functools import lru_cache
 from pathlib import Path
 from datetime import datetime
 
@@ -228,8 +229,16 @@ def add_wind_limits(ax) -> plt.Axes:
     return ax
 
 
-def add_night(ax, t_forecast, delta="1d", station=SITES_BY_NAME["Y1"]):
-    rises, sets = station.sun_rise_and_sets(t_forecast, delta=delta)
+@lru_cache(maxsize=12)
+def _cached_night_periods(
+    station_name: str, t_forecast: pd.Timestamp, delta="4d"
+) -> tuple:
+    rises, sets = SITES_BY_NAME[station_name].sun_rise_and_sets(t_forecast, delta=delta)
+    return tuple(rises), tuple(sets)
+
+
+def add_night(ax, t_forecast, delta="4d", station=SITES_BY_NAME["Y1"]):
+    rises, sets = _cached_night_periods(station.name, t_forecast)
     for t_rise, t_set in zip(rises, sets):
         ax.axvspan(t_rise.to_datetime(), t_set.to_datetime(), color="0.85", zorder=-3)
 
@@ -281,7 +290,7 @@ def add_now_line(ax, t_forecast):
     return ax
 
 
-def style_single_panel_plot(ax, fc, night_delta="1d") -> plt.Axes:
+def style_single_panel_plot(ax, fc, night_delta="4d") -> plt.Axes:
     when = fc.forecast_time
     add_night(ax, when, delta=night_delta)
     add_now_line(ax, when)
@@ -1372,6 +1381,41 @@ def plot_eff_time_cloud(fc, outname="eff_time_cloud") -> None:
     savefig(outname, t_forecast=fc.forecast_time)
 
 
+def plot_eff_sensitivity_clear(fc, outname="eff_sensitivity_clear") -> None:
+    if not fc.sensitivity.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, axes = plt.subplots(figsize=(8, 6), nrows=5, sharex=True)
+    draw_sensitivity_panels_clear(
+        axes,
+        fc,
+        column="eff_sensitivity",
+        ylabel=r"$\sigma_\mathrm{eff} / \sigma_\mathrm{eff,seas}$",
+        ylim=(0.5, 2.1),
+    )
+    for ax in axes:
+        ax.axhline(1, linestyle="dashed", color="0.4", linewidth=1.0, zorder=-1)
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
+def plot_eff_sensitivity_cloud(fc, outname="eff_sensitivity_cloud") -> None:
+    if not fc.sensitivity.okay:
+        logger.warn(f"Skipping plot: {outname}")
+        return
+    fig, axes = plt.subplots(figsize=(4, 6), nrows=5, sharex=True)
+    draw_sensitivity_panels_cloud(
+        axes,
+        fc,
+        column="eff_sensitivity",
+        ylabel=r"$\sigma_\mathrm{eff} / \sigma_\mathrm{eff,seas}$",
+        ylim=(0.5, 2.1),
+    )
+    for ax in axes:
+        draw_vil_vertical_hatching(ax, fc)
+        ax.axhline(1, linestyle="dashed", color="0.4", linewidth=1.0, zorder=-1)
+    savefig(outname, t_forecast=fc.forecast_time)
+
+
 def plot_transmit_clear(fc, outname="transmit_clear") -> None:
     if not fc.sensitivity.okay:
         logger.warn(f"Skipping plot: {outname}")
@@ -1424,6 +1468,8 @@ def plot_all_weather(fc):
     plot_operator_summary_long(fc)
     plot_eff_time_clear(fc)
     plot_eff_time_cloud(fc)
+    plot_eff_sensitivity_clear(fc)
+    plot_eff_sensitivity_cloud(fc)
     plot_transmit_clear(fc)
     plot_transmit_cloud(fc)
     for hq in fc.herbie_queries.values():
