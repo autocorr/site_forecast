@@ -67,12 +67,13 @@ class Forecast:
         self.predict = ModelPhaseForecast(self.weather, self.phase)
         self.predict_long = LongModelPhaseForecast(self.weather, self.phase)
         self.herbie_queries = {
-            q: HerbieQuery(query_type=q) for q in ("veril", "tcolw", "mcc")
+            q: HerbieQuery(query_type=q) for q in ("tcolw", "veril", "mcc", "tcoli")
         }
         self.sensitivity = VlaSensitivityEstimator(
             self.weather,
             self.weather_pres,
             self.herbie_queries["tcolw"],
+            hb_query_tcoli=self.herbie_queries["tcoli"],
             om_query_ensemble=self.weather_ens,
         )
 

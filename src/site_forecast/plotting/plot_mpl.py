@@ -266,6 +266,15 @@ def set_dates(ax, minticks=3, maxticks=7):
     return locator, formatter
 
 
+def set_log_frac_yticklabels(ax: plt.Axes, values: list[int]) -> plt.Axes:
+    start_ix = 1 if values[0] == 1 else 0
+    frac_labels = [rf"$1/{n}$" for n in reversed(values[start_ix::])]
+    frac_labels.extend([str(v) for v in values])
+    frac_values = [1 / v for v in reversed(values[start_ix::])] + values
+    ax.set_yticks(np.log10(frac_values), labels=frac_labels)
+    return ax
+
+
 def add_now_line(ax, t_forecast):
     ax.axvline(t_forecast, 0.85, 1.00, color="magenta", linestyle="dotted", zorder=-1)
     ax.axvline(t_forecast, 0.00, 0.15, color="magenta", linestyle="dotted", zorder=-1)
@@ -686,7 +695,7 @@ def plot_precipitation(fc, outname="precip"):
     ax1.set_ylim(-2.5, 102.5)
     ax1.set_ylabel("Precip. Probability")
     ax2.fill_between(w_dates, w_df.precipitation, step="mid", color="royalblue")
-    ax2.set_ylim(-1, 31)
+    ax2.set_ylim(-0.5, 10.5)
     ax2.set_ylabel("Precip. [mm]")
     for ax in axes:
         style_single_panel_plot(ax, fc)
@@ -1016,14 +1025,14 @@ def plot_herbie_quantile_waterfall(hq, outstem="waterfall") -> None:
 
 def draw_summary_cloud_series(ax, fc) -> plt.Axes:
     colors = {"mcc": "gray", "tcolw": "dodgerblue", "veril": "firebrick"}
-    for label, hq in reversed(fc.herbie_queries.items()):
+    for label, line_color in colors.items():
+        hq = fc.herbie_queries[label]
         if not hq.okay:
             logger.warn(f"Skipping plot summary panel '{label}'")
             continue
         ds = hq.ds
         s_ds = ds.sel(radius=10.0)
         vals = s_ds[f"{hq.query_type}_c"].values
-        line_color = colors[label]
         shading_color = scale_color_by_luminosity(line_color, scale_factor=0.35)
         ax.fill_between(
             s_ds.date,
@@ -1257,7 +1266,11 @@ def draw_sensitivity_panels_clear(
             )
         else:
             ax.plot(
-                series.index, series, color="darkred", linewidth=1.5, drawstyle="steps-mid"
+                series.index,
+                series,
+                color="darkred",
+                linewidth=1.5,
+                drawstyle="steps-mid",
             )
         annotate_with_patheffects(ax, band, xy=(0.975, 0.82), xycoords="axes fraction")
         style_single_panel_plot_long(ax, fc)
@@ -1299,14 +1312,34 @@ def draw_sensitivity_panels_cloud(
             ax.set_ylabel(ylabel)
 
 
+def draw_vil_vertical_hatching(ax, fc) -> plt.Axes:
+    hq = fc.herbie_queries["veril"]
+    if not hq.okay:
+        return
+    s_ds = hq.ds.sel(radius=20.0)
+    vals = s_ds["veril_c"].values
+    offset = 1e3
+    lo_vals = np.ones_like(vals) - offset
+    hi_vals = 2 * offset * (vals > 0.2).astype(float) - offset
+    ax.fill_between(
+        s_ds.date,
+        lo_vals,
+        hi_vals,
+        step="mid",
+        hatch="/",
+        edgecolor="firebrick",
+        facecolor=scale_color_by_luminosity("firebrick", scale_factor=0.35),
+        alpha=0.5,
+        linewidth=1.5,
+    )
+    return ax
+
+
 def plot_eff_time_clear(fc, outname="eff_time_clear") -> None:
     if not fc.sensitivity.okay:
         logger.warn(f"Skipping plot: {outname}")
         return
     fig, axes = plt.subplots(figsize=(8, 6), nrows=5, sharex=True)
-    for ax in axes:
-        ax.set_yticks(range(4), labels=list("0123"))
-        ax.axhline(1, linestyle="dashed", color="0.4", linewidth=1.0)
     draw_sensitivity_panels_clear(
         axes,
         fc,
@@ -1314,6 +1347,9 @@ def plot_eff_time_clear(fc, outname="eff_time_clear") -> None:
         ylabel=r"$t_\mathrm{eff} / t_\mathrm{eff,seas}$",
         ylim=(-0.1, 3.5),
     )
+    for ax in axes:
+        ax.set_yticks(range(4), labels=list("0123"))
+        ax.axhline(1, linestyle="dashed", color="0.4", linewidth=1.0, zorder=-1)
     savefig(outname, t_forecast=fc.forecast_time)
 
 
@@ -1322,9 +1358,6 @@ def plot_eff_time_cloud(fc, outname="eff_time_cloud") -> None:
         logger.warn(f"Skipping plot: {outname}")
         return
     fig, axes = plt.subplots(figsize=(4, 6), nrows=5, sharex=True)
-    for ax in axes:
-        ax.set_yticks(range(4), labels=list("0123"))
-        ax.axhline(1, linestyle="dashed", color="0.4", linewidth=1.0)
     draw_sensitivity_panels_cloud(
         axes,
         fc,
@@ -1332,6 +1365,10 @@ def plot_eff_time_cloud(fc, outname="eff_time_cloud") -> None:
         ylabel=r"$t_\mathrm{eff} / t_\mathrm{eff,seas}$",
         ylim=(-0.1, 3.5),
     )
+    for ax in axes:
+        draw_vil_vertical_hatching(ax, fc)
+        ax.set_yticks(range(4), labels=list("0123"))
+        ax.axhline(1, linestyle="dashed", color="0.4", linewidth=1.0, zorder=-1)
     savefig(outname, t_forecast=fc.forecast_time)
 
 
@@ -1364,6 +1401,8 @@ def plot_transmit_cloud(fc, outname="transmit_cloud") -> None:
         ylim=(0.5, 1.05),
         add_baseline=True,
     )
+    for ax in axes:
+        draw_vil_vertical_hatching(ax, fc)
     savefig(outname, t_forecast=fc.forecast_time)
 
 

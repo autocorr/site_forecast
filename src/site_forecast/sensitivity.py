@@ -187,6 +187,7 @@ class AmModelPredictor:
         self,
         pwv: u.Quantity["length"] | None = None,
         water_cloud: u.Quantity["surface_mass_density"] | None = None,
+        ice_cloud: u.Quantity["surface_mass_density"] | None = None,
         cache_dir: Path | None = None,
     ) -> pd.DataFrame:
         """
@@ -198,8 +199,9 @@ class AmModelPredictor:
             Override the PWV scaling for this run. If not provided, the
             instance's own PWV (set at construction) is used.
         water_cloud : u.Quantity, optional
-            Per-layer cloud liquid water mass surface density (kg/m²). If
-            not provided, no cloud liquid water is included.
+            Per-layer cloud liquid water mass surface density (kg/m²).
+        ice_cloud : u.Quantity, optional
+            Per-layer cloud ice mass surface density (kg/m²).
 
         Returns
         -------
@@ -217,6 +219,7 @@ class AmModelPredictor:
             mixing_ratio={"h2o": self.mixr},
             troposphere_h2o_scaling=pwv_scale,
             water_cloud=water_cloud,
+            ice_cloud=ice_cloud,
             output_columns=self.output_columns,
             freq_min=self.freq_min,
             freq_max=self.freq_max,
@@ -381,19 +384,19 @@ def _band_averages(freq_df: pd.DataFrame, band_frequencies: dict) -> pd.DataFram
 
 
 @u.quantity_input
-def _make_water_cloud_array(
+def _make_cloud_array(
     pressure_levels: u.Quantity["pressure"],
-    tcolw: u.Quantity["surface_mass_density"],
+    surf_dens: u.Quantity["surface_mass_density"],
     target_pressure_level: u.Quantity["pressure"] = 600.0 * u.hPa,
 ) -> u.Quantity:
     """
-    Return a mass surface density array with tcolw (kg/m²) at the layer nearest
-    to `target_pressure_level`.
+    Return a mass surface density array with the given value in (kg/m²) at the
+    nearest layer to `target_pressure_level`.
     """
-    water_cloud = np.zeros(len(pressure_levels)) * (u.kg / u.m**2)
+    cloud_array = np.zeros(len(pressure_levels)) * (u.kg / u.m**2)
     idx = int(np.argmin(np.abs(pressure_levels - target_pressure_level)))
-    water_cloud[idx] = tcolw
-    return water_cloud
+    cloud_array[idx] = surf_dens
+    return cloud_array
 
 
 def _interp_pres_to_times(
@@ -431,18 +434,19 @@ def _run_am_model(
     tcolw_value=None,
     tcolw_quantile: float | None = None,
     cloud_target_pressure=None,
+    tcoli_value=None,
+    ice_target_pressure=None,
     pwv_series: pd.Series | None = None,
 ) -> tuple[pd.Timestamp, float | None, pd.DataFrame | dict | None]:
     """
     Run AM for a single timestep; return (time, quantile, band-indexed
     DataFrame) or (time, quantile, None). Pass tcolw and cloud_target_pressure
-    to include cloud liquid water. Pass pwv_series (indexed by ensemble member,
-    values in mm) to run one AM model per member and return a dict keyed by
-    member. Module-level for multiprocessing pickling.
+    to include cloud liquid water. Pass tcoli_value and ice_target_pressure to
+    include cloud ice. Pass pwv_series (indexed by ensemble member, values in
+    mm) to run one AM model per member and return a dict keyed by member.
+    Module-level for multiprocessing pickling.
     """
     try:
-        # Initialize the model predictor for the given vertical atmospheric
-        # profiles.
         predictor = AmModelPredictor.from_frames(
             surf_row,
             pres_slice,
@@ -461,18 +465,23 @@ def _run_am_model(
                 )
                 member_results[member] = _band_averages(df, band_frequencies)
             return time, None, member_results
-        # Create array for cloud liquid column density if present.
+        water_cloud = None
         if tcolw_value is not None:
-            water_cloud = _make_water_cloud_array(
+            water_cloud = _make_cloud_array(
                 predictor.pres,
                 tcolw_value,
                 target_pressure_level=cloud_target_pressure,
             )
-        else:
-            water_cloud = None
-        df = predictor.run(water_cloud=water_cloud, cache_dir=cache_dir).droplevel(
-            "date"
-        )
+        ice_cloud = None
+        if tcoli_value is not None:
+            ice_cloud = _make_cloud_array(
+                predictor.pres,
+                tcoli_value,
+                target_pressure_level=ice_target_pressure,
+            )
+        df = predictor.run(
+            water_cloud=water_cloud, ice_cloud=ice_cloud, cache_dir=cache_dir
+        ).droplevel("date")
         return time, tcolw_quantile, _band_averages(df, band_frequencies)
     except:
         msg = f"Error in calculating sensitivity at {time}"
@@ -525,14 +534,16 @@ class VlaSensitivityEstimator(QueryBase):
     freq_min = 1.0 * u.GHz
     freq_max = 50.0 * u.GHz
     freq_step = 0.5 * u.GHz
-    cloud_target_pressure = 600.0 * u.hPa  # layer where all TCOLW is concentrated
+    cloud_target_pressure = 600.0 * u.hPa  # fidicual layer for TCOLW
+    ice_target_pressure = 350.0 * u.hPa  # fiducial layer for TCOLI
     cloud_radius = 20.0 * u.km  # km; spatial radius used to select TCOLW quantiles
 
     def __init__(
         self,
         om_query_surf: "OpenMeteoVlaQuery",
         om_query_pres: "OpenMeteoVlaPressureQuery",
-        hq_query_tcolw: Optional["HerbieQuery"],
+        hb_query_tcolw: Optional["HerbieQuery"],
+        hb_query_tcoli: Optional["HerbieQuery"] = None,
         om_query_ensemble: Optional["OpenMeteoVlaEnsembleQuery"] = None,
         n_workers: int = 20,
     ):
@@ -544,9 +555,12 @@ class VlaSensitivityEstimator(QueryBase):
         om_query_pres : OpenMeteoVlaPressureQuery
             Pressure-level forecast query providing temperature and relative
             humidity profiles.
-        hq_query_tcolw : HerbieQuery or None
+        hb_query_tcolw : HerbieQuery or None
             15-minute HRRR cloud liquid water query. If ``None`` or not okay,
             only the clear-sky hourly forecast is produced.
+        hb_query_tcoli : HerbieQuery or None
+            15-minute HRRR cloud ice water query. If present and okay, then
+            gets included in the cloudy short-term forecast (``cloud_df``).
         om_query_ensemble : OpenMeteoVlaEnsembleQuery, optional
             ECMWF IFS ensemble PWV query. If provided and okay, ``clear_df``
             gains a ``member`` index level: ``(date, band, member)``.
@@ -560,7 +574,8 @@ class VlaSensitivityEstimator(QueryBase):
             raise ValueError(f"Invalid number of workers: {n_workers=}")
         self.surf_query = om_query_surf
         self.pres_query = om_query_pres
-        self.clwp_query = hq_query_tcolw
+        self.clwp_query = hb_query_tcolw
+        self.ciwp_query = hb_query_tcoli
         self.ensp_query = om_query_ensemble
         self.n_workers = n_workers
         self._time = om_query_surf.forecast_time
@@ -575,8 +590,16 @@ class VlaSensitivityEstimator(QueryBase):
             self.cloud_df = None
 
     @property
-    def has_cloud(self) -> bool:
+    def has_cloud_liquid(self) -> bool:
         return self.clwp_query is not None and self.clwp_query.okay
+
+    @property
+    def has_cloud_ice(self) -> bool:
+        return self.ciwp_query is not None and self.ciwp_query.okay
+
+    @property
+    def has_cloud(self) -> bool:
+        return self.has_cloud_liquid and self.has_cloud_ice
 
     @property
     def has_ensemble(self) -> bool:
@@ -626,12 +649,24 @@ class VlaSensitivityEstimator(QueryBase):
         df.index.name = "date"
         return df
 
+    def _get_tcoli_series(self) -> pd.Series:
+        """Extract TCOLI mean (20 km radius) from HerbieQuery as a time-indexed Series (kg/m²)."""
+        ds = self.ciwp_query.ds
+        tcoli_da = ds["tcoli_m"].sel(radius=self.cloud_radius, method="nearest")
+        s = tcoli_da.to_pandas()
+        s.index = pd.DatetimeIndex(s.index)
+        if s.index.tz is None:
+            s.index = s.index.tz_localize("UTC")
+        s.index.name = "date"
+        return s
+
     def _run_series(
         self,
         surf_df: pd.DataFrame,
         pres_df: pd.DataFrame,
         tcolw_df: pd.DataFrame | None = None,
         ensemble_pwv_df: pd.DataFrame | None = None,
+        tcoli_series: pd.Series | None = None,
     ) -> pd.DataFrame:
         """
         Run AM for a time series; return a (date, band)-, (date, band,
@@ -671,6 +706,8 @@ class VlaSensitivityEstimator(QueryBase):
                     None,
                     None,
                     None,
+                    None,
+                    None,
                     ensemble_pwv_df.xs(t, level="date")[
                         "total_column_integrated_water_vapour"
                     ],
@@ -686,6 +723,7 @@ class VlaSensitivityEstimator(QueryBase):
                 pres_resolved.index.get_level_values("date").unique()
             )
             quantiles = tcolw_df.columns
+            kgm2 = u.kg / u.m**2
             args = [
                 (
                     t,
@@ -695,9 +733,11 @@ class VlaSensitivityEstimator(QueryBase):
                     self.freq_max,
                     self.freq_step,
                     self.band_frequencies,
-                    tcolw_df.loc[t, q] * u.kg / u.m**2,
+                    tcolw_df.loc[t, q] * kgm2,
                     float(q),
                     self.cloud_target_pressure,
+                    tcoli_series.loc[t] * kgm2 if self.has_cloud_ice else None,
+                    self.ice_target_pressure,
                 )
                 for t in times
                 for q in quantiles
@@ -800,8 +840,14 @@ class VlaSensitivityEstimator(QueryBase):
             pres_df,
             ensemble_pwv_df=self.ensp_query.df if self.has_ensemble else None,
         )
-        if self.has_cloud:
-            cloud_df = self._run_series(surf_df, pres_df, tcolw_df=self._get_tcolw_df())
+        if self.has_cloud_liquid:
+            tcoli_series = self._get_tcoli_series() if self.has_cloud_ice else None
+            cloud_df = self._run_series(
+                surf_df,
+                pres_df,
+                tcolw_df=self._get_tcolw_df(),
+                tcoli_series=tcoli_series,
+            )
         else:
             cloud_df = None
 
