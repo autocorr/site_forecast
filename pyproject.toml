@@ -37,7 +37,12 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test  = [ "pytest>=8.0.0" ]
+test  = [
+    "pytest>=8.0.0",
+    "pytest-recording>=0.13",
+    "pytest-cov>=5.0",
+    "pandera[pandas]>=0.20",
+]
 dev   = [ "flake8>=7.0.0" ]
 doc   = [ "sphinx>=7.0.0", "sphinx-rtd-theme>=3.0.0" ]
 train = [ "optuna>=4.3.0" ]
@@ -52,4 +57,12 @@ include-package-data = true
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["site_forecast*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "schema: live tests that hit real services to validate response schemas",
+    "slow: end-to-end forecast or multi-step integration tests",
+]
+addopts = "-m 'not schema and not slow'"
 
