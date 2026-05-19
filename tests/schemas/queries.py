@@ -186,24 +186,17 @@ def assert_herbie_dataset(ds: xr.Dataset, var: str) -> None:
     expected_dims = {"date", "step", "y", "x", "quantile", "radius"}
     missing_dims = expected_dims - set(ds.sizes)
     if missing_dims:
-        raise AssertionError(
-            f"Missing dims: {missing_dims}; have {dict(ds.sizes)}"
-        )
+        raise AssertionError(f"Missing dims: {missing_dims}; have {dict(ds.sizes)}")
     if ds.sizes["quantile"] != 21:
-        raise AssertionError(
-            f"quantile dim should be 21, got {ds.sizes['quantile']}"
-        )
+        raise AssertionError(f"quantile dim should be 21, got {ds.sizes['quantile']}")
     if ds.sizes["radius"] != 2:
-        raise AssertionError(
-            f"radius dim should be 2, got {ds.sizes['radius']}"
-        )
+        raise AssertionError(f"radius dim should be 2, got {ds.sizes['radius']}")
 
     expected_vars = {var, f"{var}_q", f"{var}_p", f"{var}_m", f"{var}_c"}
     missing_vars = expected_vars - set(ds.data_vars)
     if missing_vars:
         raise AssertionError(
-            f"Missing data_vars for {var}: {missing_vars}; "
-            f"have {list(ds.data_vars)}"
+            f"Missing data_vars for {var}: {missing_vars}; have {list(ds.data_vars)}"
         )
 
     expected_dtypes = {
@@ -216,6 +209,4 @@ def assert_herbie_dataset(ds: xr.Dataset, var: str) -> None:
     for name, expected in expected_dtypes.items():
         actual = ds[name].dtype.name
         if actual != expected:
-            raise AssertionError(
-                f"{name} dtype should be {expected}, got {actual}"
-            )
+            raise AssertionError(f"{name} dtype should be {expected}, got {actual}")

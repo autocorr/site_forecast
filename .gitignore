@@ -53,6 +53,8 @@ distribute-*.tar.gz
 .cache.sqlite
 *.parquet
 *.netcdf
+!tests/fixtures/**/*.parquet
+!tests/fixtures/**/*.netcdf
 
 # Mac OSX
 .DS_Store
