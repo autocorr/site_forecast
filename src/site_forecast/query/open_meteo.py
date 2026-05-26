@@ -360,7 +360,8 @@ class OpenMeteoVlaQuery(OpenMeteoQuery):
             minutely_columns=COLUMNS_VLA_15,
             **kwargs,
         )
-        self.df.reset_index(level="site", inplace=True)
+        if self.okay:
+            self.df.reset_index(level="site", inplace=True)
 
     def to_model_series(self) -> TimeSeries:
         if self.okay:

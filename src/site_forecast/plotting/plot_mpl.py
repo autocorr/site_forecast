@@ -811,9 +811,11 @@ def plot_herbie_cloud_combo(fc, outname="cloud_combo"):
         logger.warn(f"Skipping plot: {outname}")
         return
     if (n_tcw := tcw.ds.step.shape) != (n_vil := vil.ds.step.shape):
-        raise ValueError(
+        logger.warn(f"Skipping plot: {outname}")
+        logger.warn(
             f"Different number of timesteps for TCOLW and VIL: {n_tcw=}, {n_vil=}"
         )
+        return
     fig, axes = plt.subplots(
         figsize=(8, 11.3), nrows=8, ncols=6, sharex=True, sharey=True
     )

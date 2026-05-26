@@ -722,6 +722,8 @@ class VlaSensitivityEstimator(QueryBase):
             times = tcolw_df.index.intersection(surf_df.index).intersection(
                 pres_resolved.index.get_level_values("date").unique()
             )
+            if self.has_cloud_ice:
+                times = times.intersection(tcoli_series.index)
             quantiles = tcolw_df.columns
             kgm2 = u.kg / u.m**2
             args = [
