@@ -71,6 +71,7 @@ pythonpath = ["tests"]
 markers = [
     "schema: live tests that hit real services to validate response schemas",
     "slow: end-to-end forecast or multi-step integration tests",
+    "cassette(name): share one named VCR cassette across tests",
 ]
 addopts = "-m 'not schema and not slow'"
 

@@ -66,6 +66,11 @@ _OPEN_METEO_MULTI_COLS = [
     "total_column_integrated_water_vapour",
 ]
 
+# open-meteo builds its date index from `pd.to_datetime(..., unit="s")` +
+# `pd.date_range`, which yields second-resolution timestamps under modern
+# pandas (not the legacy nanosecond default).
+_OPEN_METEO_DATE_DTYPE = "datetime64[s, UTC]"
+
 _DERIVED_TIME_COLS = {
     "mjd": pa.Column("float64"),
     "hour": pa.Column("float32"),
@@ -84,7 +89,7 @@ OpenMeteoVlaSchema = pa.DataFrameSchema(
         **_float32_cols(_OPEN_METEO_MINUTELY_COLS),
         **_DERIVED_TIME_COLS,
     },
-    index=pa.Index("datetime64[ns, UTC]", name="date"),
+    index=pa.Index(_OPEN_METEO_DATE_DTYPE, name="date"),
     strict=True,
 )
 
@@ -96,7 +101,7 @@ OpenMeteoMultiSiteSchema = pa.DataFrameSchema(
     },
     index=pa.MultiIndex(
         [
-            pa.Index("datetime64[ns, UTC]", name="date"),
+            pa.Index(_OPEN_METEO_DATE_DTYPE, name="date"),
             pa.Index(str, name="site"),
         ]
     ),
@@ -111,7 +116,7 @@ OpenMeteoVlaPressureSchema = pa.DataFrameSchema(
     },
     index=pa.MultiIndex(
         [
-            pa.Index("datetime64[ns, UTC]", name="date"),
+            pa.Index(_OPEN_METEO_DATE_DTYPE, name="date"),
             pa.Index("int64", name="pressure"),
         ]
     ),
@@ -125,7 +130,7 @@ OpenMeteoVlaEnsembleSchema = pa.DataFrameSchema(
     },
     index=pa.MultiIndex(
         [
-            pa.Index("datetime64[ns, UTC]", name="date"),
+            pa.Index(_OPEN_METEO_DATE_DTYPE, name="date"),
             pa.Index("int64", name="member"),
         ]
     ),

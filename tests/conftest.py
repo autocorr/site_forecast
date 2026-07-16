@@ -25,6 +25,26 @@ def dataframes_dir() -> Path:
     return DATAFRAMES_DIR
 
 
+@pytest.fixture
+def vcr_cassette_dir() -> str:
+    """Store cassettes alongside the other replay fixtures rather than in the
+    pytest-recording default (`tests/query/cassettes/`)."""
+    return str(CASSETTES_DIR)
+
+
+@pytest.fixture
+def default_cassette_name(request) -> str:
+    """Let a test pick a shared cassette via ``@pytest.mark.cassette("name")``
+    so several tests exercising the same request replay one recording. Falls
+    back to pytest-recording's default (the test name) when unmarked."""
+    marker = request.node.get_closest_marker("cassette")
+    if marker is not None:
+        return marker.args[0]
+    from pytest_recording.plugin import get_default_cassette_name
+
+    return get_default_cassette_name(request.cls, request.node.name)
+
+
 @pytest.fixture(scope="module")
 def vcr_config():
     return {
