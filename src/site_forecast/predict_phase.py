@@ -77,6 +77,17 @@ class ModelPhaseForecast(QueryBase):
         self._w_query = w_query
         self._p_query = p_query
 
+    def _set_skipped(self, w_query, p_query) -> None:
+        """Populate the attribute contract for a skipped forecast (``okay`` is
+        False) without running the model."""
+        self.df = None
+        self.w_ts = None
+        self.p_ts = None
+        self.model = None
+        self._time = w_query.forecast_time
+        self._w_query = w_query
+        self._p_query = p_query
+
     @property
     def forecast_time(self) -> Timestamp:
         return self._time
@@ -95,6 +106,14 @@ class ModelPhaseForecast(QueryBase):
 
 class LongModelPhaseForecast(ModelPhaseForecast):
     def __init__(self, w_query, p_query, n=288):
+        # The 12-day forecast needs several days of weather covariates and
+        # cannot fall back to the short synthetic series the way the 12-hour
+        # forecast can. Skip cleanly rather than attempting and logging a
+        # traceback when the weather query failed (e.g. a transient 503).
+        if not w_query.okay:
+            logger.warning("Skipping long phase forecast: weather unavailable.")
+            self._set_skipped(w_query, p_query)
+            return
         super().__init__(w_query, p_query, use_phase=False, n=n)
 
     def save_data(self, outname: Union[Path, str] = "predicted_phase_long") -> None:

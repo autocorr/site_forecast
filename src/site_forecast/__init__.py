@@ -133,7 +133,7 @@ def _get_logger(config):
     logging.basicConfig(
         level=level_code,
         format="%(asctime)s\t%(levelname)s\t%(message)s",
-        datefmt="%Y-%m-%d %I:%M:%S",
+        datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[
             logging.FileHandler(log_path),
             logging.StreamHandler(),

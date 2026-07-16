@@ -24,7 +24,12 @@ from ..train import to_training_subset
 
 
 CACHE_SESSION = requests_cache.CachedSession(".cache", expire_after=3600)
-RETRY_SESSION = retry(CACHE_SESSION, retries=5, backoff_factor=0.2)
+RETRY_SESSION = retry(
+    CACHE_SESSION,
+    retries=5,
+    backoff_factor=1,
+    status_to_retry=(429, 500, 502, 503, 504),
+)
 API_URL = "https://api.open-meteo.com/v1/forecast"
 ENSEMBLE_API_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 VLA_SITE = SITES_BY_NAME["Y1"]

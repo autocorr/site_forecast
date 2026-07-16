@@ -582,11 +582,17 @@ class VlaSensitivityEstimator(QueryBase):
         self.baseline_df = self._compute_seasonal_baseline()
         self.clear_df = None
         self.cloud_df = None
+        # Sensitivity requires both the surface and pressure-level weather
+        # forecasts. Skip cleanly rather than logging a traceback when either
+        # is unavailable (e.g. a transient open-meteo 503).
+        if not (om_query_surf.okay and om_query_pres.okay):
+            logger.warning("Skipping sensitivity estimates: weather unavailable.")
+            return
         try:
             self.clear_df, self.cloud_df = self.compute()
         except:
             logger.exception("Error computing sensitivity estimates.")
-            self.df = None
+            self.clear_df = None
             self.cloud_df = None
 
     @property
