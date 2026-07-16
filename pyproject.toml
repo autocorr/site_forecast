@@ -26,6 +26,7 @@ dependencies = [
     "psycopg2>=2.9.0",
     "requests-cache>=1.2.1",
     "retry-requests>=2.0.0",
+    "schedule>=1.2.2",
     "u8darts[notorch]>=0.35.0",
 ]
 classifiers = [
