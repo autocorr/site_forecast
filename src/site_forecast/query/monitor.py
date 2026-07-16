@@ -102,7 +102,11 @@ class MonitorConnection:
         )
 
     def __del__(self):
-        self.connection.close()
+        # `__init__` may fail before `self.connection` is assigned (e.g., a
+        # refused connection), in which case there is nothing to close.
+        connection = getattr(self, "connection", None)
+        if connection is not None:
+            connection.close()
 
     @property
     def timeout_length_ms(self):
