@@ -8,14 +8,12 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from pandas import Timestamp
 from schedule import Scheduler
 
 from . import (
     CONFIG,
     KMHOUR_TO_MS,
     logger,
-    _now_dir,
 )
 from .plotting.plot_mpl import plot_all_weather
 from .plotting.plot_plotly import plot_vlba_multisite

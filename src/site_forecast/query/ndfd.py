@@ -42,7 +42,7 @@ def query_weather(url=URL) -> DataFrame | None:
         df.set_index(date + hours, inplace=True)
         df.drop(columns="hour", inplace=True)
         return df
-    except:
+    except Exception:
         logger.warn("Could not retrieve NDFD weather forecast.")
         return None
 
@@ -52,7 +52,7 @@ class NdfdQuery(QueryBase):
         self._time = pd.Timestamp.now(tz="utc") if time is None else time
         try:
             self.df = query_weather(url=url)
-        except:
+        except Exception:
             logger.exception("Error retrieving NDFD weather forecast.")
             self.df = None
 
@@ -66,6 +66,6 @@ class NdfdQuery(QueryBase):
 
     def save_data(self, outname: Union[Path, str] = "ndfd") -> None:
         if not self.okay:
-            logger.warn(f"Could not save data for NDFD forecast.")
+            logger.warn("Could not save data for NDFD forecast.")
             return
         to_parquet(self.df, self.forecast_dir / outname)

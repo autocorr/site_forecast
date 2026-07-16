@@ -4,7 +4,6 @@ from typing import Union
 import pandas as pd
 from pandas import DataFrame, Timestamp
 
-from darts import TimeSeries
 from darts.models import LightGBMModel
 
 from . import MODEL_DIR, logger
@@ -67,7 +66,7 @@ class ModelPhaseForecast(QueryBase):
         model = get_model(self.model_types[which_okay])
         try:
             self.df = predict_model(model, p_ts, w_ts, n=n)
-        except:
+        except Exception:
             logger.exception("Error predicting phase RMS from model.")
             self.df = None
         self.w_ts = w_ts

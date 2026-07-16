@@ -4,7 +4,6 @@ from numbers import Real
 from pathlib import Path
 from contextlib import redirect_stdout
 from typing import Optional, Union
-from numbers import Real
 
 import herbie
 import numpy as np
@@ -16,7 +15,6 @@ from astropy.coordinates import Latitude, Longitude
 
 from . import (
     QueryBase,
-    to_parquet,
     to_netcdf,
     normalize_time,
     wrap_coordinates,
@@ -247,7 +245,7 @@ def subset_rectangular_region(
 
 def pick_points(ds, points, method="nearest", k=None) -> Dataset:
     # Redirect STDOUT to avoid the "Growing BallTree" message.
-    with redirect_stdout(io.StringIO()) as f:
+    with redirect_stdout(io.StringIO()):
         return ds.herbie.pick_points(
             points,
             method=method,
@@ -431,7 +429,7 @@ class HerbieQuery(QueryBase):
                 .merge(m_ds, compat="override")
             )
             add_coverage(self.ds)
-        except:
+        except Exception:
             logger.exception("Error retrieving HRRR data.")
             self.ds = None
 

@@ -59,6 +59,12 @@ include-package-data = true
 where = ["src"]
 include = ["site_forecast*"]
 
+[tool.ruff.lint.per-file-ignores]
+# Astropy `u.Quantity["<physical_type>"]` annotations: ruff reads the string
+# subscript as an undefined name (F821); these are valid astropy physical types.
+"src/site_forecast/__init__.py" = ["F821"]
+"src/site_forecast/sensitivity.py" = ["F821"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]

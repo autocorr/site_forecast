@@ -1,17 +1,12 @@
-import warnings
 from pathlib import Path
-from datetime import datetime
 
-import numpy as np
 import pandas as pd
-import plotly
 import plotly.express as px
 from plotly import graph_objects as go
 
 from .. import (
     CONFIG,
     KMHOUR_TO_MS,
-    TPW_TO_PWV,
     VLBA_SITES,
     VLBA_SITE_NAMES,
     logger,
@@ -448,5 +443,5 @@ def plot_vlba_multisite(fc, prefix=None):
                     fig.save(f"{prefix}_{outname}")
                 else:
                     fig.save(outname)
-        except:
+        except Exception:
             logger.exception(f"Unhandled exception for {col}")

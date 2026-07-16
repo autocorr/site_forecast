@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Optional, Union
 
 import cfgrib
-import numpy as np
 import pandas as pd
 import requests
 import xarray as xr
@@ -43,7 +42,7 @@ from . import (
     normalize_time,
     wrap_coordinates,
 )
-from .. import CONFIG, SITE_LAT, SITE_LON, logger
+from .. import SITE_LAT, SITE_LON, logger
 from .herbie_maps import (
     subset_rectangular_region,
     extract_position,
@@ -51,7 +50,6 @@ from .herbie_maps import (
     extract_quantiles,
     add_coverage,
     geodetic_to_number,
-    get_var_names,
 )
 
 
@@ -423,7 +421,7 @@ class NomadsQuery(QueryBase):
                 .merge(m_ds, compat="override")
             )
             add_coverage(self.ds)
-        except:
+        except Exception:
             logger.exception("Error retrieving HRRR data via NOMADS.")
             self.ds = None
 

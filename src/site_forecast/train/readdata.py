@@ -18,7 +18,6 @@ def get_gaps(df, delta="0.25D", col="mjd"):
 
 
 def angle_diff(x, y):
-    rad_to_deg = 360 / (2 * np.pi)
     c1 = np.exp(np.deg2rad(x) * 1j)
     c2 = np.exp(np.deg2rad(y) * 1j)
     return np.rad2deg(np.angle(c1 / c2))

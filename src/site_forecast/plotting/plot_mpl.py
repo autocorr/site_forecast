@@ -15,7 +15,7 @@ import matplotlib.dates as mdates
 from matplotlib import pyplot as plt
 from matplotlib import patches, patheffects
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
-from matplotlib.ticker import AutoMinorLocator, ScalarFormatter
+from matplotlib.ticker import AutoMinorLocator
 
 from .. import CONFIG, KMHOUR_TO_MS, TPW_TO_PWV, SITES_BY_NAME, logger, _now_dir
 
@@ -90,7 +90,7 @@ CMAP_GRAY_MAGMA = splice_colormaps("gray_r", "magma", pivot=0.2)
 
 
 def colormap_from_herbie_query(hq, cmap_name="magma", split_cmap_name="gray_r"):
-    vmin, vmax, split, use_log = hq.plot_min, hq.plot_max, hq.plot_split, hq.plot_log
+    vmin, vmax, split = hq.plot_min, hq.plot_max, hq.plot_split
     if vmax <= vmin:
         raise ValueError(f"Invalid limits: {vmin=}, {vmax=}")
     vmin = hq.data.min().item() if vmin is None else vmin
@@ -113,7 +113,7 @@ def scale_color_by_luminosity(color: str, scale_factor=0.5):
     """
     try:
         hex_s = plt.cm.colors.cnames[color]
-    except:
+    except Exception:
         hex_s = color
     rgb = plt.cm.colors.to_rgb(hex_s)
     hue, lum, sat = colorsys.rgb_to_hls(*rgb)
@@ -220,7 +220,7 @@ def add_wind_limits(ax) -> plt.Axes:
         else:
             color = "deepskyblue"
             linewidth = 1.0
-        la = ax.axhline(
+        ax.axhline(
             limit, color=color, linestyle="dashed", linewidth=linewidth, zorder=-2
         )
         ax.annotate(
@@ -328,7 +328,6 @@ def draw_previous_phases(ax, fc, use_long=False) -> plt.Axes:
         filen=filen,
         n_forecasts=n_forecasts,
     )
-    n_offsets = len(utc_offsets)
     alpha = 0.15 if use_long else 0.30
     for df, offset in zip(previous_forecasts, utc_offsets):
         if df is None:
@@ -380,7 +379,6 @@ def draw_phase_rms(ax, fc, overplot_previous=True) -> plt.Axes:
 
 def draw_phase_rms_long(ax, fc, overplot_previous=True) -> plt.Axes:
     df = fc.predict_long.df
-    when = fc.forecast_time
     if overplot_previous:
         draw_previous_phases(ax, fc, use_long=True)
     ax.plot(df.index.to_pydatetime(), df.phase_rms, linestyle="solid", color="darkred")
@@ -490,7 +488,6 @@ def draw_wind_speed(ax, fc) -> plt.Axes:
 
 
 def draw_wind_speed_long(ax, fc) -> plt.Axes:
-    when = fc.forecast_time
     w_df = fc.weather.df
     w_dates = w_df.index.to_pydatetime()
     ax.fill_between(
@@ -1052,7 +1049,7 @@ def draw_summary_cloud_series(ax, fc) -> plt.Axes:
         )
     style_single_panel_plot(ax, fc)
     ax.set_ylim(-0.05, 1.05)
-    ax.set_ylabel(f"Cloud Coverage")
+    ax.set_ylabel("Cloud Coverage")
     ax.legend(loc="lower right", fontsize=8, handlelength=1, framealpha=0.6)
     return ax
 
@@ -1100,7 +1097,6 @@ def draw_band_limit_strip(ax, fc, use_long=False) -> plt.Axes:
     # Index:       [ 0,  1,  2,  3,  4,  5]
     wind_limits = [5, 6, 7, 10, 15]  # m/s
     phase_limits = [5, 7, 10, 15, 30]  # deg
-    selfc_limits = [10, 14, 20, 30, 60]  # deg
     try:
         # Get the time axis for (0, +9) hr
         when = fc.forecast_time.round("15min")
@@ -1165,7 +1161,7 @@ def draw_band_limit_strip(ax, fc, use_long=False) -> plt.Axes:
         ax.axvline(when, color="magenta", linestyle="dotted", zorder=-1)
         ax.tick_params(axis="y", labelleft=False)
         ax.set_yticks([])
-    except:
+    except Exception:
         logger.warn("Could not draw band limits in operator summary.")
     return ax
 

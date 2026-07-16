@@ -56,14 +56,14 @@ class AmModelPredictor:
     @u.quantity_input
     def __init__(
         self,
-        pressure: u.Quantity["pressure"],  # noqa: F821
-        temperature: u.deg_C | u.Quantity["temperature"],  # noqa: F821
-        relative_humidity: u.Quantity["dimensionless"],  # noqa: F821
-        surface_pressure: u.Quantity["pressure"] | None = None,  # noqa: F821
-        pwv: u.Quantity["length"] | None = None,  # noqa: F821
-        freq_min: u.Quantity["frequency"] = 1.0 * u.GHz,  # noqa: F821
-        freq_max: u.Quantity["frequency"] = 50.0 * u.GHz,  # noqa: F821
-        freq_step: u.Quantity["frequency"] = 0.2 * u.GHz,  # noqa: F821
+        pressure: u.Quantity["pressure"],
+        temperature: u.deg_C | u.Quantity["temperature"],
+        relative_humidity: u.Quantity["dimensionless"],
+        surface_pressure: u.Quantity["pressure"] | None = None,
+        pwv: u.Quantity["length"] | None = None,
+        freq_min: u.Quantity["frequency"] = 1.0 * u.GHz,
+        freq_max: u.Quantity["frequency"] = 50.0 * u.GHz,
+        freq_step: u.Quantity["frequency"] = 0.2 * u.GHz,
         time: pd.Timestamp | None = None,
     ):
         """
@@ -97,7 +97,7 @@ class AmModelPredictor:
         self.freq_step = freq_step
         self.time = time if time is not None else pd.NaT
         # Convert values to descending order in order to be used by `interp_by_pressure`
-        if is_ascending := pressure[1] > pressure[0]:
+        if pressure[1] > pressure[0]:
             pressure = pressure[::-1]
             temperature = temperature[::-1]
             relative_humidity = relative_humidity[::-1]
@@ -292,9 +292,9 @@ class VlaSeasonalPredictor:
     def __init__(
         self,
         date: pd.Timestamp,
-        freq_min: u.Quantity["frequency"] = FREQ_MIN,  # noqa: F821
-        freq_max: u.Quantity["frequency"] = FREQ_MAX,  # noqa: F821
-        freq_step: u.Quantity["frequency"] = FREQ_STEP,  # noqa: F821
+        freq_min: u.Quantity["frequency"] = FREQ_MIN,
+        freq_max: u.Quantity["frequency"] = FREQ_MAX,
+        freq_step: u.Quantity["frequency"] = FREQ_STEP,
     ):
         """
         Parameters
@@ -483,7 +483,7 @@ def _run_am_model(
             water_cloud=water_cloud, ice_cloud=ice_cloud, cache_dir=cache_dir
         ).droplevel("date")
         return time, tcolw_quantile, _band_averages(df, band_frequencies)
-    except:
+    except Exception:
         msg = f"Error in calculating sensitivity at {time}"
         if tcolw_quantile is not None:
             msg += f", q={tcolw_quantile:.2f}"
@@ -590,7 +590,7 @@ class VlaSensitivityEstimator(QueryBase):
             return
         try:
             self.clear_df, self.cloud_df = self.compute()
-        except:
+        except Exception:
             logger.exception("Error computing sensitivity estimates.")
             self.clear_df = None
             self.cloud_df = None

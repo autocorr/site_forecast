@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import Optional, Union
-from numbers import Real
 
 import numpy as np
 import pandas as pd
@@ -224,7 +223,7 @@ class MonitorPointDbQuery(QueryBase):
         try:
             t_last = self.df.index.tz_localize("utc").max()
             return abs(self.forecast_time - t_last) < self.min_lag
-        except:
+        except Exception:
             return False
 
     @property
@@ -232,7 +231,7 @@ class MonitorPointDbQuery(QueryBase):
         try:
             t_span = abs(self.df.index.min() - self.df.index.max())
             return t_span > self.min_span
-        except:
+        except Exception:
             return False
 
 
@@ -244,7 +243,7 @@ class ApiQuery(MonitorPointDbQuery):
                 mjd_start=self.mjd_start, mjd_end=self.mjd_end, **kwargs
             )
             self.df = df
-        except:
+        except Exception:
             logger.exception("Error retrieving API data.")
             self.df = None
 
@@ -275,7 +274,7 @@ class WeatherStationQuery(MonitorPointDbQuery):
             self.df = MonitorConnection(
                 timeout_length=self.timeout_length
             ).query_weather(mjd_start=self.mjd_start, mjd_end=self.mjd_end, **kwargs)
-        except:
+        except Exception:
             logger.exception("Error retrieving site weather station data.")
             self.df = None
 

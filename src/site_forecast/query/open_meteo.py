@@ -1,13 +1,11 @@
 from pathlib import Path
-from typing import Optional, Union, List, Iterable
-from numbers import Real
+from typing import Union, List
 
 import numpy as np
 import pandas as pd
 from darts import TimeSeries
 from pandas import Timestamp
 from astropy.time import Time
-from astropy.coordinates import Latitude, Longitude
 
 import requests_cache
 import openmeteo_requests
@@ -17,9 +15,8 @@ from . import (
     QueryBase,
     timeseries_from_dataframe,
     to_parquet,
-    wrap_coordinates,
 )
-from .. import SITE_LAT, SITE_LON, SITES, SITES_BY_NAME, Station, logger
+from .. import SITES, SITES_BY_NAME, Station, logger
 from ..train import to_training_subset
 
 
@@ -318,7 +315,7 @@ class OpenMeteoQuery(QueryBase):
         self._time = pd.Timestamp.now(tz="utc")
         try:
             self.df = request_data(**kwargs)
-        except:
+        except Exception:
             logger.exception(f"Error retrieving {self.query_type} forecast data.")
             self.df = None
 
@@ -455,7 +452,7 @@ class OpenMeteoVlaEnsembleQuery(OpenMeteoQuery):
                 **kwargs,
             )
             self.df = self.df.reset_index(level="site", drop=True)
-        except:
+        except Exception:
             logger.exception(f"Error retrieving {self.query_type} forecast data.")
             self.df = None
 
