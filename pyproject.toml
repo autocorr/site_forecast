@@ -75,3 +75,8 @@ markers = [
 ]
 addopts = "-m 'not schema and not slow'"
 
+[dependency-groups]
+dev = [
+    "code-review-graph>=2.3.6",
+]
+
