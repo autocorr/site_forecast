@@ -1,0 +1,62 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install dev dependencies
+        run: uv sync --extra dev
+      - name: ruff check
+        run: uv run ruff check .
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Write minimal site_forecast.ini
+        # Importing `site_forecast` runs `_load_configuration()` at import time,
+        # which raises unless a config file is found. The [Monitor] keys have no
+        # fallback and are read by MonitorConnection before psycopg2.connect
+        # (mocked in the offline tests), so dummy values are required.
+        run: |
+          cat > site_forecast.ini <<'EOF'
+          [Paths]
+          logs = ./logs
+          [Logging]
+          log_level = warning
+          [Monitor]
+          host = localhost
+          user = ci
+          password = ci
+          dbname = ci
+          EOF
+      - name: Install all dependencies
+        run: uv sync --all-extras
+      - name: Run offline test lane
+        # The default addopts already select `not schema and not slow`;
+        # --block-network fails the run on any stray real network request
+        # (cassettes still replay).
+        run: uv run pytest --block-network --cov=site_forecast --cov-report=term-missing

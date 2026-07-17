@@ -44,7 +44,7 @@ test  = [
     "pytest-cov>=5.0",
     "pandera[pandas]>=0.20",
 ]
-dev   = [ "flake8>=7.0.0" ]
+dev   = [ "flake8>=7.0.0", "ruff>=0.15" ]
 doc   = [ "sphinx>=7.0.0", "sphinx-rtd-theme>=3.0.0" ]
 train = [ "optuna>=4.3.0" ]
 
