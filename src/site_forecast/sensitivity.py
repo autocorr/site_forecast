@@ -126,7 +126,8 @@ class AmModelPredictor:
         self.relh = np.maximum(self.relative_humidity_epsilon, self.relh)
         # Get the PWV from the vertical profiles for reference scaling.
         self.model_pwv = (
-            amwrap.precipitable_water(self.pres, self.temp, self.relh).to("mm").m * u.mm
+            amwrap.precipitable_water(self.pres, self.temp, self.relh).to("mm").value
+            * u.mm
         )
 
     @classmethod
@@ -414,7 +415,7 @@ def _interp_pres_to_times(
 
 
 def _get_worker_cache_path() -> Path:
-    return amwrap.ENV["AM_CACHE_PATH"] / f"_am_{os.getpid()}"
+    return Path(amwrap.ENV["AM_CACHE_PATH"]) / f"_am_{os.getpid()}"
 
 
 def _worker_init() -> None:
