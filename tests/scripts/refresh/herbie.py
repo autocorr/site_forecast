@@ -1,35 +1,31 @@
-"""Record a tiny HRRR TCOLW subset for the offline Herbie test fixture.
+"""Herbie fixture source: a tiny HRRR TCOLW subset at ``herbie_tcolw_tiny.nc``.
 
-Run from the repo root with ``uv run python tests/scripts/refresh_herbie_fixture.py``.
 Requires network access to a HRRR bucket (Herbie downloads one latest run).
-
-The offline test (``tests/query/test_herbie_maps.py``) monkeypatches
-``herbie_maps.get_tcolw`` to replay this snapshot and then runs the *real*
-reduction pipeline (``subset_rectangular_region`` → ``extract_*`` →
-``add_coverage``) against it. So the fixture must be the raw ``get_tcolw``
-output — the full-resolution quantity grid with its GRIB/plot attrs — merely
-cropped in ``y``/``x`` to a small window around the VLA to keep it tiny.
+``tests/query/test_herbie_maps.py`` monkeypatches ``herbie_maps.get_tcolw`` to
+replay this snapshot and then runs the *real* reduction pipeline against it, so
+the fixture is the raw ``get_tcolw`` output — the full-resolution quantity grid
+with its GRIB/plot attrs — merely cropped in ``y``/``x`` to a small window
+around the VLA.
 
 The crop must stay large enough that ``subset_rectangular_region`` still leaves
-enough grid points for the largest default reduction radius (``radius=20`` km →
-``k ≈ 140`` nearest neighbours); the script asserts this so a future change to
-the window or the radii can't silently produce a degenerate fixture.
-
-This is generated fresh from a live download — never copied from the
+enough points for the largest default reduction radius (20 km -> k ~= 140); the
+refresh asserts this so a future window/radius change can't silently produce a
+degenerate fixture. Generated fresh from a live download — never copied from the
 exploratory netcdfs under ``data/old_data/``.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
+import xarray as xr
 
 from site_forecast import SITE_LAT, SITE_LON
 from site_forecast.query import herbie_maps as hm
 
+from . import FixtureSource, Signature, atomic_write, dataset_signature, FIXTURES_DIR
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "dataframes"
+
+NETCDF_PATH = FIXTURES_DIR / "dataframes" / "herbie_tcolw_tiny.nc"
 
 WINDOW_HALF = 25  # grid points either side of the VLA -> ~50x50 crop
 
@@ -47,9 +43,7 @@ def _min_points_for_default_radii() -> int:
     return int(np.pi * (20 / 3) ** 2)
 
 
-def main() -> None:
-    FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
-
+def refresh() -> None:
     ds = hm.get_tcolw()
     iy, ix = _nearest_yx(ds)
     tiny = ds.isel(
@@ -69,15 +63,22 @@ def main() -> None:
             "Widen WINDOW_HALF."
         )
 
-    out_path = FIXTURES_DIR / "herbie_tcolw_tiny.nc"
-    tiny.to_netcdf(out_path)
+    with atomic_write(NETCDF_PATH) as tmp:
+        tiny.to_netcdf(tmp)
 
     print(
-        f"Wrote {out_path}: dims={dict(tiny.sizes)}, "
-        f"subset points={n_points} (>= k={k})"
+        f"Wrote {NETCDF_PATH}: dims={dict(tiny.sizes)}, "
+        f"subset points={n_points} (>= k={k}), "
+        f"{NETCDF_PATH.stat().st_size / 1024:.1f} KB",
+        flush=True,
     )
-    print(f"      {out_path.stat().st_size / 1024:.1f} KB")
 
 
-if __name__ == "__main__":
-    main()
+def load() -> dict[str, Signature]:
+    if not NETCDF_PATH.exists():
+        return {}
+    with xr.open_dataset(NETCDF_PATH) as ds:
+        return {"herbie_tcolw_tiny.nc": dataset_signature(ds)}
+
+
+SOURCE = FixtureSource("herbie", refresh=refresh, load=load)

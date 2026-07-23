@@ -14,7 +14,7 @@ Two layers:
    are structural (``assert_herbie_dataset``) plus reduction invariants rather
    than golden constants.
 
-The fixture is produced by ``tests/scripts/refresh_herbie_fixture.py`` (one
+The fixture is produced by ``tests/scripts/refresh_fixtures.py herbie`` (one
 HRRR download); upstream schema drift is the job of the live ``schema`` lane
 (``tests/schema_live/test_live_herbie_maps.py``).
 """

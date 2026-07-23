@@ -149,7 +149,7 @@ NdfdSchema = pa.DataFrameSchema(
     # The parser builds this index from `pd.to_datetime` + `pd.to_timedelta`,
     # which yields microsecond resolution under modern pandas (parquet
     # preserves it). Regenerate the fixture via
-    # `tests/scripts/refresh_ndfd_fixture.py` if a pandas bump shifts this.
+    # `tests/scripts/refresh_fixtures.py ndfd` if a pandas bump shifts this.
     index=pa.Index("datetime64[us, UTC]", name="hour"),
     strict=True,
 )
